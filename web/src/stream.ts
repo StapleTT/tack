@@ -137,6 +137,7 @@ async function connect() {
   // Reliable and ordered: a lost key-up or button-up would leave it stuck.
   const inputDc = conn.createDataChannel("input");
   inputDc.binaryType = "arraybuffer";
+  (window as unknown as { __tackInputDc: RTCDataChannel }).__tackInputDc = inputDc; // for web/check.mjs
   inputDc.onopen = () => { if (conn === pc) input = new Input(inputDc, video, ui); };
 
   const stream = new MediaStream();

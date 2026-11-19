@@ -28,6 +28,11 @@ func TestParseInput(t *testing.T) {
 		t.Fatalf("key parsed wrong: %+v %v", e, err)
 	}
 
+	e, err = parseInput([]byte{inHostCursor, 1})
+	if err != nil || !e.down {
+		t.Fatalf("host cursor parsed wrong: %+v %v", e, err)
+	}
+
 	bad := [][]byte{
 		nil,
 		{99},                                 // unknown type

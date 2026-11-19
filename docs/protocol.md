@@ -65,6 +65,7 @@ Each message is binary and little-endian. The first byte is the type.
 | 6 | slot u8, mask u16, buttons u32 (Moonlight flags), lt u8, rt u8, lx, ly, rx, ry: i16 | Gamepad state. Stick Y is positive up. Clearing the slot's bit in mask unplugs it. |
 | 7 | slot u8, mask u16 | Gamepad arrival (Xbox type, analog triggers, rumble) |
 | 8 | (none) | Toggle the host cursor: manual fix if the bridge's idea of the cursor state is wrong |
+| 9 | visible u8 | Draw the host cursor into the video. The client sends 1 when pointer lock starts and 0 when it ends. |
 
 The bridge drops malformed messages, and drops input from any session that is not the current one.
 
@@ -83,5 +84,5 @@ The agent connects outbound to `wss://<pi>/agent` with a bearer token.
 - One session at a time. A new `POST /api/session` ends the current one (`kicked`) and starts fresh.
 - If an app is already running on the host, the bridge resumes it at the new client's resolution. Otherwise it launches the configured app (`-app`, default `Desktop`).
 - Ending a session never quits the host app.
-- Host cursor: the bridge hides it at the first session start and keeps it hidden across takeovers. It shows it again when the last session ends or the bridge shuts down. If the host ended the stream, the connection is gone, so the cursor stays hidden until the next session (which expects it hidden). If state ever drifts, the menu has a "Toggle host cursor" fix.
+- Host cursor: exactly one cursor is visible at all times. While the browser draws its own (absolute mode, or relative mode waiting for a click), the host cursor is kept out of the video. While the pointer is locked, the host cursor is drawn into the video; a game that hides its cursor still hides it. The bridge hides it at session start and keeps it hidden across takeovers. It shows it again when the last session ends or the bridge shuts down. If the host ended the stream, the connection is gone, so the cursor stays hidden until the next session (which expects it hidden). If state ever drifts, the menu has a "Toggle host cursor" fix.
 - Browser gone: for now pion's ICE timeouts end the session about 30 s after the browser disappears (5 s to disconnected, 25 s more to failed). Same-client resume inside that window is planned for step 5.

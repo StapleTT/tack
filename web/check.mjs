@@ -1,7 +1,7 @@
 // End-to-end check: headless Firefox opens /stream (which connects on load) and
 // reports WebRTC receive stats after a few seconds of streaming.
 //
-//   node web/check.mjs [url] [seconds] [--mouse] [--screenshot=file.png]
+//   node web/check.mjs [url] [seconds] [--mouse] [--screenshot=file.png] [--host-cursor=1|0]
 //
 // --mouse also moves the browser pointer and compares the real host cursor
 // (hyprctl cursorpos), so it only works with the bridge talking to this host.
@@ -16,6 +16,8 @@ import { join } from "node:path";
 const args = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const mouseTest = process.argv.includes("--mouse");
 const shotPath = process.argv.find((a) => a.startsWith("--screenshot="))?.slice(13);
+// --host-cursor=1|0 sends the "pointer locked" message (draw host cursor) before the screenshot.
+const hostCursor = process.argv.find((a) => a.startsWith("--host-cursor="))?.slice(14);
 const url = args[0] ?? "https://localhost:8443/stream";
 const seconds = Number(args[1] ?? 8);
 const port = 9300 + (process.pid % 500); // unique per run so checks can overlap
@@ -89,6 +91,11 @@ const report = await evaluate(`(async () => {
   return JSON.stringify(out);
 })()`);
 const result = JSON.parse(report);
+
+if (hostCursor !== undefined) {
+  await evaluate(`window.__tackInputDc.send(new Uint8Array([9, ${Number(hostCursor)}]))`);
+  await sleep(500);
+}
 
 if (shotPath) {
   const { data } = await send("browsingContext.captureScreenshot", { context });

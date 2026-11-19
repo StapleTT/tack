@@ -13,7 +13,7 @@
 - One client at a time, newest wins, 30 s reconnect grace.
 - Single admin account, one saved host (schema allows more).
 - HTTPS from day one via local CA.
-- Stock Sunshine, no patch: the host cursor is hidden by sending Sunshine's Ctrl+Alt+Shift+N toggle at session start and again at session end (see spike 1).
+- Stock Sunshine, no patch: the host cursor is toggled with Sunshine's Ctrl+Alt+Shift+N shortcut (see spike 1). It is hidden while the browser shows its own cursor and drawn into the video while the pointer is locked, like Parsec. In pointer lock the visible cursor therefore lags by the stream latency; that is inherent.
 - No adaptive bitrate in v1 (Moonlight owns encoder settings).
 
 - Browser session start is a single HTTPS POST (non-trickle ICE), not a WebSocket. Server-to-browser messages go over the `control` data channel.

@@ -18,11 +18,12 @@ const (
 	inPad          = 6 // slot u8, mask u16, buttons u32, lt u8, rt u8, lx ly rx ry i16
 	inPadArrival   = 7 // slot u8, mask u16
 	inToggleCursor = 8 // (none) manual recovery if the host cursor state is wrong
+	inHostCursor   = 9 // visible u8: draw the host cursor into the video (pointer locked)
 )
 
 var inputLen = map[byte]int{
 	inMouseAbs: 9, inMouseRel: 5, inMouseButton: 3, inKey: 5,
-	inScroll: 5, inPad: 18, inPadArrival: 4, inToggleCursor: 1,
+	inScroll: 5, inPad: 18, inPadArrival: 4, inToggleCursor: 1, inHostCursor: 2,
 }
 
 type inputEvent struct {
@@ -78,6 +79,8 @@ func parseInput(b []byte) (inputEvent, error) {
 		e.lx, e.ly, e.rx, e.ry = i16(10), i16(12), i16(14), i16(16)
 	case inPadArrival:
 		e.slot, e.mask = b[1], u16(2)
+	case inHostCursor:
+		e.down = b[1] != 0 // visible
 	}
 	if (e.typ == inPad || e.typ == inPadArrival) && e.slot > 3 {
 		return e, fmt.Errorf("bad gamepad slot %d", e.slot)

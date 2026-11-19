@@ -40,7 +40,8 @@ type Manager struct {
 	cur    *Session
 	lastID int
 	// cursorHidden tracks Sunshine's global draw-cursor flag, which only
-	// flips via a toggle shortcut. It stays hidden across takeovers.
+	// flips via a toggle shortcut. Hidden while the browser draws its own
+	// cursor, shown while the pointer is locked; hidden across takeovers.
 	cursorHidden bool
 }
 
@@ -329,12 +330,18 @@ func (m *Manager) handleInput(s *Session, msg webrtc.DataChannelMessage) {
 		log.Printf("session %d: dropped input: %v", s.id, err)
 		return
 	}
-	if e.typ == inToggleCursor {
+	if e.typ == inToggleCursor || e.typ == inHostCursor {
 		m.mu.Lock()
 		if m.cur == s {
-			moonlight.ToggleHostCursor()
-			m.cursorHidden = !m.cursorHidden
-			log.Printf("session %d: manual host cursor toggle (hidden=%v)", s.id, m.cursorHidden)
+			if e.typ == inToggleCursor {
+				// Manual fix: our idea of Sunshine's flag was wrong, so flip both.
+				moonlight.ToggleHostCursor()
+				m.cursorHidden = !m.cursorHidden
+				log.Printf("session %d: manual host cursor toggle (hidden=%v)", s.id, m.cursorHidden)
+			} else if hidden := !e.down; hidden != m.cursorHidden {
+				moonlight.ToggleHostCursor()
+				m.cursorHidden = hidden
+			}
 		}
 		m.mu.Unlock()
 		return

@@ -5,7 +5,7 @@ import { vkFor, VK } from "./keymap.js";
 
 export type MouseMode = "absolute" | "relative";
 
-const T = { abs: 1, rel: 2, button: 3, key: 4, scroll: 5, pad: 6, padArrival: 7, toggleCursor: 8 } as const;
+const T = { abs: 1, rel: 2, button: 3, key: 4, scroll: 5, pad: 6, padArrival: 7, toggleCursor: 8, hostCursor: 9 } as const;
 const MOD = { shift: 1, ctrl: 2, alt: 4, meta: 8 } as const;
 
 // Moonlight gamepad flags, indexed by the browser's "standard" button layout.
@@ -47,7 +47,12 @@ export class Input {
     this.on(window, "keyup", (e) => this.onKey(e as KeyboardEvent, false), { capture: true });
     this.on(window, "blur", () => this.releaseAll());
     this.on(document, "visibilitychange", () => { if (document.hidden) this.releaseAll(); });
-    this.on(document, "pointerlockchange", () => this.ui.armed(this.mode === "relative" && !this.locked()));
+    this.on(document, "pointerlockchange", () => {
+      // Pointer lock hides the browser's cursor, so let the host's show in
+      // the video instead; hide it again whenever the browser draws one.
+      this.send(new Uint8Array([T.hostCursor, this.locked() ? 1 : 0]));
+      this.ui.armed(this.mode === "relative" && !this.locked());
+    });
     this.padTimer = window.setInterval(() => this.pollPads(), 4);
   }
 
