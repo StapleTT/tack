@@ -41,7 +41,7 @@ node web/check.mjs https://localhost:8443/stream 8   # headless Firefox end-to-e
 
 First visit per laptop: download the CA from the page link (`/ca.pem`) and import it as a trusted authority. On ChromeOS: Settings > Privacy and security > Security > Manage certificates > Authorities. On Windows: certmgr, Trusted Root Certification Authorities. Firefox needs its own import: Settings > Privacy & Security > Certificates.
 
-Host agent (on the gaming PC, inside Hyprland): copy the bridge's `data/agent-token` and `data/tls/ca.pem` to `~/.config/tack/`, then run `tack-agent -bridge https://<bridge-ip>:8443`, or install `deploy/tack-agent.service` (instructions inside). It syncs the clipboard and switches the browser to pointer lock when a game window (`steam_app_*`, `gamescope`) is focused. Change the rule with `-relative-class`.
+Host agent (on the gaming PC, inside Hyprland): copy the bridge's `data/agent-token` and `data/tls/ca.pem` to `~/.config/tack/`, then run `tack-agent -bridge https://<bridge-ip>:8443`, or install `deploy/tack-agent.service` (instructions inside). It syncs the clipboard and switches the browser to pointer lock when a game window (`steam_app_*`, `gamescope`) is focused. Change the rule with `-relative-class`. It also sends cursors from your XCursor theme (`XCURSOR_THEME`/`XCURSOR_SIZE`, or `-cursor-theme`/`-cursor-size`) and follows the host cursor's state (arrow, hand, text, wait, progress), so the browser cursor matches the host.
 
 While streaming, Ctrl+Alt+Shift + H opens the menu, F toggles fullscreen (with Keyboard Lock on Chrome), M switches mouse mode (absolute/relative), and S shows stats.
 

@@ -49,6 +49,8 @@ Response `200 {"sdp": "<answer>"}`, sent once the Moonlight session is up. Error
 
 | `{"type":"clipboard","text":"...","more":bool}` | Host clipboard changed. Arrives in chunks of at most 8192 characters; `more:false` marks the last one. |
 | `{"type":"clipboard-ack","id":n}` | The host clipboard now holds the text for paste `id` (or there is no agent). |
+| `{"type":"cursors","size":24,"cursors":{"default":{"png":"<base64>","hot_x":x,"hot_y":y},...}}` | The host cursor theme's images for each state (`default`, `pointer`, `text`, `wait`, `progress`; a theme may lack some). The page uses them as its cursor over the video, drawn `size` CSS pixels wide (sharp on HiDPI via `image-set`). Hotspots are in PNG pixels. Sent on connect if the agent provided them. |
+| `{"type":"cursor","state":"pointer"}` | The host cursor changed state. States without an image use the browser's cursor of the same name. |
 
 Browser to bridge on the same channel:
 
@@ -82,7 +84,7 @@ Each message is binary and little-endian. The first byte is the type.
 | 5 | vertical, horizontal: i16 | Scroll; 120 = one notch, +vertical = up, +horizontal = right |
 | 6 | slot u8, mask u16, buttons u32 (Moonlight flags), lt u8, rt u8, lx, ly, rx, ry: i16 | Gamepad state. Stick Y is positive up. Clearing the slot's bit in mask unplugs it. |
 | 7 | slot u8, mask u16 | Gamepad arrival (Xbox type, analog triggers, rumble) |
-| 8 | (none) | Toggle the host cursor: manual fix if the bridge's idea of the cursor state is wrong |
+| 8 | (none) | Toggle the host cursor: manual fix if the bridge's record of the cursor state is wrong (Ctrl+Alt+Shift+N or the menu) |
 | 9 | visible u8 | Draw the host cursor into the video. The client sends 1 when pointer lock starts and 0 when it ends. |
 
 The bridge drops malformed messages, and drops input from any session that is not the current one.
@@ -97,6 +99,11 @@ The agent connects outbound to `wss://<bridge>/agent` with `Authorization: Beare
 | A → B | `{"type":"clipboard","text":"..."}` | Host clipboard text changed (≤ 1 MB, valid UTF-8) |
 | B → A | `{"type":"clipboard","text":"...","id":n}` | A browser pasted: set the host clipboard |
 | A → B | `{"type":"clipboard-ack","id":n}` | Host clipboard set (also sent if `wl-copy` failed, so the paste key is never stuck) |
+| A → B | `{"type":"cursors","size":n,"cursors":{state:{"png","hot_x","hot_y"}}}` | The host XCursor theme's image per state (largest size in the theme, ≤ 40 KB of PNG in total), sent on connect. The bridge keeps the last set for new browsers |
+| A → B | `{"type":"cursor","state":"text"}` | The host cursor changed state. Sent on connect and on each change |
+| A → B | `{"type":"sunshine","uptime_ms":n}` | How long Sunshine has run. Sent on connect and when a new Sunshine process appears (polled every 2 s) |
+
+Cursor states: Hyprland does not say which named cursor it shows, and its cursor capture (`ext-image-copy-capture-v1` pointer cursor session) returns transparent pixels for cursors that apps choose by name. It does report every cursor change, along with the cursor's buffer size and hotspot. The agent matches those against the theme: at 32 px, `default` (5,4), `pointer` (12,3) and `text` (14,16) are unique. `wait` and `progress` share their hotspot with static cursors such as move or help, but they animate, so Hyprland reports a new frame every ~166 ms. Two quick repeats count as animation, and an animated candidate that doesn't animate within 600 ms counts as `default`. Unrecognised shapes show as `default`.
 
 The agent ignores clipboard changes that match the text both sides already have, so its own `wl-copy` never echoes back. When the agent disconnects, the bridge forgets its mode.
 
@@ -105,5 +112,6 @@ The agent ignores clipboard changes that match the text both sides already have,
 - One session at a time. A new `POST /api/session` ends the current one (`kicked`) and starts fresh.
 - If an app is already running on the host, the bridge resumes it at the new client's resolution. Otherwise it launches the configured app (`-app`, default `Desktop`).
 - Ending a session never quits the host app.
-- Host cursor: exactly one cursor is visible at all times. While the browser draws its own (absolute mode, or relative mode waiting for a click), the host cursor is kept out of the video. While the pointer is locked, the host cursor is drawn into the video; a game that hides its cursor still hides it. The bridge hides it at session start and keeps it hidden across takeovers. It shows it again when the last session ends or the bridge shuts down. If the host ended the stream, the connection is gone, so the cursor stays hidden until the next session (which expects it hidden). If state ever drifts, the menu has a "Toggle host cursor" fix.
+- Host cursor: exactly one cursor is visible at all times. While the browser draws its own (absolute mode, or relative mode waiting for a click), the host cursor is kept out of the video. While the pointer is locked, the host cursor is drawn into the video; a game that hides its cursor still hides it. The bridge hides it at session start and keeps it hidden across takeovers. It shows it again when the last session ends or the bridge shuts down. If the host ended the stream, the connection is gone, so the cursor stays hidden until the next session (which expects it hidden).
+- Sunshine's flag can only be toggled, never read, so the bridge keeps a record in `data/host-cursor.json` (whether it is hidden, and when it last flipped). The record survives bridge crashes. The flag resets to "drawn" when Sunshine restarts, so when the agent reports a Sunshine uptime shorter than the time since the last flip, the bridge drops a "hidden" record. A toggle that could not be sent never changes the record. If the record is still wrong (Sunshine restarted with no agent connected, or someone pressed the shortcut on the host), press Ctrl+Alt+Shift+N in the stream or use "Toggle host cursor" in the menu. Both flip the flag once without changing what the bridge thinks it should be.
 - Browser gone: for now pion's ICE timeouts end the session about 30 s after the browser disappears (5 s to disconnected, 25 s more to failed). Same-client resume inside that window is planned for step 5.

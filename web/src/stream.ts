@@ -3,6 +3,7 @@
 
 import { Input, MouseMode } from "./input.js";
 import { VK } from "./keymap.js";
+import { HostCursor } from "./hostcursor.js";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const video = $<HTMLVideoElement>("video");
@@ -36,6 +37,7 @@ function show(text: string, button = "Connect") {
 
 function stop() {
   clearInterval(statsTimer);
+  hostCursor.cancel();
   input?.stop();
   input = null;
   pc?.close();
@@ -63,9 +65,13 @@ function unmute() {
 soundBtn.addEventListener("click", unmute);
 window.addEventListener("keydown", unmute, { capture: true });
 
+const hostCursor = new HostCursor(video, () => input?.toggleHostCursor());
+debug.hostCursor = hostCursor;
+
 const ui = {
   armed: (on: boolean) => { banner.hidden = !on || !menu.hidden; },
-  modeChanged: (mode: MouseMode) => { $("mode").textContent = mode; },
+  modeChanged: (mode: MouseMode) => { $("mode").textContent = mode; hostCursor.cancel(); },
+  hostPointer: (x: number, y: number) => hostCursor.moved(x, y),
   menuOpen: () => !menu.hidden,
   hotkey: (key: "menu" | "fullscreen" | "stats" | "mode") => act(key),
   sendControl: (msg: object) => { if (control?.readyState === "open") control.send(JSON.stringify(msg)); },
@@ -159,6 +165,8 @@ async function connect() {
     else if (msg.type === "ended") { stop(); show(`Stream ended: ${msg.reason}`, "Reconnect"); }
     else if (msg.type === "mode") input?.setMode(msg.mode);
     else if (msg.type === "rumble") input?.playRumble(msg.pad, msg.low, msg.high);
+    else if (msg.type === "cursors") void hostCursor.load(msg.cursors, msg.size);
+    else if (msg.type === "cursor") hostCursor.show(msg.state, msg.px, msg.screen_w);
     else if (msg.type === "clipboard" || msg.type === "clipboard-ack") input?.onControl(msg);
   };
 

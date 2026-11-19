@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -45,16 +46,17 @@ type Manager struct {
 	// for the whole host launch).
 	live atomic.Pointer[Session]
 
-	agentMu    sync.Mutex
-	agentID    int
-	agentSend  func(agentproto.Message) error
-	agentClose func()
-	agentMode  string // last mode the agent reported
+	agentMu          sync.Mutex
+	agentID          int
+	agentSend        func(agentproto.Message) error
+	agentClose       func()
+	agentMode        string         // last mode the agent reported
+	agentCursors     map[string]any // host cursor images for browsers, nil if none
+	agentCursorState map[string]any // last host cursor state message
 
-	// cursorHidden tracks Sunshine's global draw-cursor flag, which only
-	// flips via a toggle shortcut. Hidden while the browser draws its own
-	// cursor, shown while the pointer is locked; hidden across takeovers.
-	cursorHidden bool
+	// cursor records Sunshine's draw-cursor flag (see cursor.go); mu guards it.
+	cursor     cursorState
+	cursorPath string
 }
 
 type Session struct {
@@ -67,6 +69,8 @@ type Session struct {
 
 	clip       strings.Builder // browser clipboard chunks being reassembled
 	clipTooBig bool
+
+	wantCursor bool // pointer locked, so the host cursor belongs in the video (m.mu)
 
 	// live gates input: only the current session may send to Moonlight, and
 	// never while it is being stopped.
@@ -82,7 +86,7 @@ const (
 
 // NewManager prepares WebRTC with all media on one UDP port, so a single
 // firewall or port-forward rule covers it.
-func NewManager(host *nvhttp.Client, app string, udpPort int) (*Manager, error) {
+func NewManager(host *nvhttp.Client, app string, udpPort int, dataDir string) (*Manager, error) {
 	mux, err := ice.NewMultiUDPMuxFromPort(udpPort)
 	if err != nil {
 		return nil, fmt.Errorf("udp port %d: %w", udpPort, err)
@@ -116,7 +120,9 @@ func NewManager(host *nvhttp.Client, app string, udpPort int) (*Manager, error) 
 		}
 	}
 	api := webrtc.NewAPI(webrtc.WithSettingEngine(se), webrtc.WithMediaEngine(me))
-	return &Manager{host: host, app: app, api: api}, nil
+	m := &Manager{host: host, app: app, api: api, cursorPath: filepath.Join(dataDir, "host-cursor.json")}
+	m.loadCursor()
+	return m, nil
 }
 
 // Start takes over from any current session, launches Moonlight and returns
@@ -163,8 +169,8 @@ func (m *Manager) Start(ctx context.Context, req Request) (string, error) {
 			s.control = dc
 			s.mu.Unlock()
 			dc.OnOpen(func() {
-				if mode := m.mode(); mode != "" {
-					s.sendControl(map[string]string{"type": "mode", "mode": mode})
+				for _, msg := range m.agentState() {
+					s.sendControl(msg)
 				}
 			})
 			dc.OnMessage(func(msg webrtc.DataChannelMessage) { m.handleControl(s, msg) })
@@ -222,6 +228,7 @@ func (m *Manager) Start(ctx context.Context, req Request) (string, error) {
 	}
 	m.cur = s
 	m.live.Store(s)
+	m.syncCursor() // the browser draws its own cursor, so hide the host's
 	return pc.LocalDescription().SDP, nil
 }
 
@@ -314,11 +321,6 @@ func (m *Manager) startMoonlight(ctx context.Context, req Request, s *Session, v
 	s.inputMu.Lock()
 	s.live = true
 	s.inputMu.Unlock()
-	// The browser draws its own cursor, so keep the host's out of the video.
-	if !m.cursorHidden {
-		moonlight.ToggleHostCursor()
-		m.cursorHidden = true
-	}
 	log.Printf("session %d: moonlight up in %v (app %d, resume=%v)", s.id, time.Since(start).Round(time.Millisecond), appID, resume)
 	return nil
 }
@@ -355,14 +357,11 @@ func (m *Manager) handleInput(s *Session, msg webrtc.DataChannelMessage) {
 	if e.typ == inToggleCursor || e.typ == inHostCursor {
 		m.mu.Lock()
 		if m.cur == s {
-			if e.typ == inToggleCursor {
-				// Manual fix: our idea of Sunshine's flag was wrong, so flip both.
-				moonlight.ToggleHostCursor()
-				m.cursorHidden = !m.cursorHidden
-				log.Printf("session %d: manual host cursor toggle (hidden=%v)", s.id, m.cursorHidden)
-			} else if hidden := !e.down; hidden != m.cursorHidden {
-				moonlight.ToggleHostCursor()
-				m.cursorHidden = hidden
+			if e.typ == inHostCursor {
+				s.wantCursor = e.down
+				m.syncCursor()
+			} else if s.live && m.toggleCursor(!s.wantCursor) {
+				log.Printf("session %d: manual host cursor fix", s.id)
 			}
 		}
 		m.mu.Unlock()
@@ -427,10 +426,8 @@ func (m *Manager) endLocked(s *Session, reason string) {
 		// Show the host cursor again unless another session takes over right
 		// away, or the host connection is already gone. The pause lets the
 		// toggle keystrokes leave before the input stream shuts down.
-		if m.cursorHidden && reason != reasonKicked && reason != reasonHostEnded {
-			moonlight.ToggleHostCursor()
+		if m.cursor.Hidden && reason != reasonKicked && reason != reasonHostEnded && m.toggleCursor(false) {
 			time.Sleep(100 * time.Millisecond)
-			m.cursorHidden = false
 		}
 		moonlight.Stop()
 		m.cur = nil

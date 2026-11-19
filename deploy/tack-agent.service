@@ -5,6 +5,8 @@
 #   install -Dm644 <bridge data>/tls/ca.pem  ~/.config/tack/ca.pem
 #   install -Dm644 deploy/tack-agent.service ~/.config/systemd/user/tack-agent.service
 #   edit -bridge below, then: systemctl --user enable --now tack-agent
+# The browser cursor comes from XCURSOR_THEME. If the service doesn't see it
+# ("cursor: ... no default pointer" in its log), add -cursor-theme NAME.
 [Unit]
 Description=tack host agent
 After=graphical-session.target

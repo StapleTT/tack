@@ -22,6 +22,8 @@ export interface InputUI {
   // Called when relative mode waits for a click or key press to lock the pointer.
   armed(on: boolean): void;
   modeChanged(mode: MouseMode): void;
+  // The host pointer moved to (x, y) in video pixels (absolute mode).
+  hostPointer(x: number, y: number): void;
   hotkey(key: "menu" | "fullscreen" | "stats" | "mode"): void;
   menuOpen(): boolean;
   sendControl(msg: object): void;
@@ -222,6 +224,7 @@ export class Input {
     this.msg(T.abs, 9, (v) => {
       v.setUint16(1, x, true); v.setUint16(3, y, true); v.setUint16(5, vw, true); v.setUint16(7, vh, true);
     });
+    this.ui.hostPointer(x, y);
   }
 
   private onButton(e: MouseEvent, down: boolean) {
@@ -253,12 +256,14 @@ export class Input {
   private onKey(e: KeyboardEvent, down: boolean) {
     if (e.ctrlKey && e.altKey && e.shiftKey && down) {
       const hk = ({ KeyH: "menu", KeyF: "fullscreen", KeyS: "stats", KeyM: "mode" } as const)[e.code as "KeyH"];
-      // Swallow our hotkeys and Sunshine's own (N toggles the cursor, F1-F12
-      // switch displays) so the host never sees them.
+      // Swallow our hotkeys and Sunshine's own (F1-F12 switch displays) so
+      // the host never sees them. N is Sunshine's cursor toggle; the bridge
+      // owns that flag, so route it to the bridge's manual fix.
       if (hk || e.code === "KeyN" || /^F([1-9]|1[0-2])$/.test(e.code)) {
         e.preventDefault();
         e.stopPropagation();
         if (hk && !e.repeat) this.ui.hotkey(hk);
+        if (e.code === "KeyN" && !e.repeat) this.toggleHostCursor();
         return;
       }
     }

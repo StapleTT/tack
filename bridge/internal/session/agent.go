@@ -3,6 +3,7 @@ package session
 import (
 	"encoding/json"
 	"log"
+	"time"
 
 	"github.com/pion/webrtc/v4"
 
@@ -59,6 +60,36 @@ func (m *Manager) FromAgent(msg agentproto.Message) {
 				s.sendControl(map[string]any{"type": "clipboard", "text": c, "more": i < len(chunks)-1})
 			}
 		}
+	case agentproto.TypeSunshine:
+		if msg.UptimeMs > 0 {
+			m.sunshineUp(time.Duration(msg.UptimeMs) * time.Millisecond)
+		}
+	case agentproto.TypeCursors:
+		total := 0
+		for _, c := range msg.Cursors {
+			total += len(c.PNG)
+		}
+		if len(msg.Cursors) == 0 || total > agentproto.MaxCursorPNG || msg.Size <= 0 || msg.Size > 256 {
+			return
+		}
+		c := map[string]any{"type": "cursors", "size": msg.Size, "cursors": msg.Cursors}
+		m.agentMu.Lock()
+		m.agentCursors = c
+		m.agentMu.Unlock()
+		if s != nil {
+			s.sendControl(c)
+		}
+	case agentproto.TypeCursor:
+		if msg.State == "" || len(msg.State) > 32 {
+			return
+		}
+		c := map[string]any{"type": "cursor", "state": msg.State, "px": msg.Px, "screen_w": msg.ScreenW}
+		m.agentMu.Lock()
+		m.agentCursorState = c
+		m.agentMu.Unlock()
+		if s != nil {
+			s.sendControl(c)
+		}
 	case agentproto.TypeClipboardAck:
 		if s != nil {
 			s.sendControl(map[string]any{"type": "clipboard-ack", "id": msg.ID})
@@ -73,10 +104,23 @@ func (m *Manager) toAgent(msg agentproto.Message) bool {
 	return send != nil && send(msg) == nil
 }
 
-func (m *Manager) mode() string {
+// agentState returns the control messages a newly connected browser needs
+// from the agent. The cursor images survive agent reconnects: they only
+// change with the theme.
+func (m *Manager) agentState() []any {
 	m.agentMu.Lock()
 	defer m.agentMu.Unlock()
-	return m.agentMode
+	var out []any
+	if m.agentMode != "" {
+		out = append(out, map[string]string{"type": "mode", "mode": m.agentMode})
+	}
+	if m.agentCursors != nil {
+		out = append(out, m.agentCursors)
+	}
+	if m.agentCursorState != nil {
+		out = append(out, m.agentCursorState)
+	}
+	return out
 }
 
 // handleControl takes browser messages on the control channel. Clipboard

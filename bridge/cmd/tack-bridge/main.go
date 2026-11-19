@@ -299,8 +299,8 @@ func cursorSpike(ctx context.Context, o streamOpts, n *atomic.Int64) {
 	start := time.Now()
 	at := func(d time.Duration) time.Duration { return max(0, d-time.Since(start)) }
 	step(at(1*time.Second), "cursor to centre", func() { moonlight.MousePosition(w/2, h/2, w, h) })
-	step(at(3*time.Second), "toggle cursor (hide)", moonlight.ToggleHostCursor)
+	step(at(3*time.Second), "toggle cursor (hide)", func() { moonlight.ToggleHostCursor() })
 	step(at(4*time.Second), "nudge cursor", func() { moonlight.MousePosition(w/2+40, h/2+40, w, h) })
-	step(at(6*time.Second), "toggle cursor (show)", moonlight.ToggleHostCursor)
+	step(at(6*time.Second), "toggle cursor (show)", func() { moonlight.ToggleHostCursor() })
 	step(at(7*time.Second), "nudge cursor", func() { moonlight.MousePosition(w/2, h/2, w, h) })
 }

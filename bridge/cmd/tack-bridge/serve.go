@@ -34,7 +34,7 @@ func serve(ctx context.Context, dataDir, listen string, udpPort int, app string)
 	if err != nil {
 		return err
 	}
-	mgr, err := session.NewManager(host, app, udpPort)
+	mgr, err := session.NewManager(host, app, udpPort, dataDir)
 	if err != nil {
 		return err
 	}

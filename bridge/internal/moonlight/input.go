@@ -52,26 +52,37 @@ func Scroll(amount int16) { C.LiSendHighResScrollEvent(C.short(amount)) }
 func HScroll(amount int16) { C.LiSendHighResHScrollEvent(C.short(amount)) }
 
 // Key sends a Windows virtual-key code; Sunshine maps it to the host keyboard.
-func Key(vk int16, down bool, mods byte) {
+func Key(vk int16, down bool, mods byte) bool {
 	action := C.char(C.KEY_ACTION_UP)
 	if down {
 		action = C.KEY_ACTION_DOWN
 	}
-	C.LiSendKeyboardEvent(C.short(vk), action, C.char(mods))
+	return C.LiSendKeyboardEvent(C.short(vk), action, C.char(mods)) == 0
 }
 
 // ToggleHostCursor sends Ctrl+Alt+Shift+N, Sunshine's shortcut for drawing or
 // hiding the host cursor in captured frames. Sunshine keeps that flag globally
 // until it restarts, so callers must toggle it back when the session ends.
-func ToggleHostCursor() {
+// It reports whether the N press was sent (false without a connection).
+//
+// Sunshine only takes the shortcut on a fresh N press while exactly
+// Ctrl+Alt+Shift are flagged as held, and its key state outlives sessions.
+// So release N and the modifiers first (a release of a key that is not held
+// is ignored): a held or stuck key can then no longer swallow the toggle.
+func ToggleHostCursor() bool {
+	Key(VKN, false, 0)
+	Key(VKLShift, false, 0)
+	Key(VKLMenu, false, 0)
+	Key(VKLControl, false, 0)
 	Key(VKLControl, true, ModCtrl)
 	Key(VKLMenu, true, ModCtrl|ModAlt)
 	Key(VKLShift, true, ModCtrl|ModAlt|ModShift)
-	Key(VKN, true, ModCtrl|ModAlt|ModShift)
+	ok := Key(VKN, true, ModCtrl|ModAlt|ModShift)
 	Key(VKN, false, ModCtrl|ModAlt|ModShift)
 	Key(VKLShift, false, ModCtrl|ModAlt)
 	Key(VKLMenu, false, ModCtrl)
 	Key(VKLControl, false, 0)
+	return ok
 }
 
 // Controller sends the full state of gamepad slot (0-3). mask has a bit set

@@ -38,3 +38,21 @@ Result (2026-11-18): **passes on x86 (gaming PC streaming to itself); Pi run sti
 - Sunshine's web UI only accepts PIN entry from `https://localhost:47990` by default (CSRF origin check). Entering it from the LAN IP fails unless `csrf_allowed_origins` is set.
 
 Remaining: build and run the same command natively on the Pi 5 (`make bridge` needs Go, cmake, gcc, OpenSSL headers) and repeat the measurement over the wire.
+
+## 3. Host cursor image for the browser cursor
+
+Question: can the agent read the host's current cursor image so the browser can show it (CSS `cursor: url(...)`) instead of its own arrow?
+
+Check: `spikes/cursor-image/cursor.c` opens an `ext-image-copy-capture-v1` pointer cursor session on the output and saves every frame.
+
+Result (2026-11-19, Hyprland 0.57.1, NVIDIA, 10-bit output `XBGR2101010`): **partial.**
+
+- Shape-change events work: a new frame and a new hotspot arrive whenever the cursor changes, e.g. (14,16) over text and (5,4) for the arrow. Buffers are 32x32 ARGB8888.
+- The pixels come back fully transparent. With `cursor:no_hardware_cursors 1` the session never sent a frame at all.
+- Not tried: the dmabuf path, 8-bit output, and a cursor theme or size other than the current one.
+
+Cause (from Hyprland's `CursorshareSession.cpp`): it only draws cursors that come from a client's own surface. Cursors that apps choose by name (cursor-shape protocol, used by most toolkits) are cleared to transparent. Hyprland also sends the hotspot event after the frame it belongs to.
+
+Used instead: the cursor session's change events plus hotspots, matched against the XCursor theme, with animation telling apart the loading cursors (see protocol.md, "Cursor states"). Verified live through the stream: arrow over empty space, hand over a button, I-beam over a text box. The animated states are only covered by unit tests.
+
+Earlier fallback idea, not needed: on each shape change, grab a small `zwlr_screencopy` region around the pointer with and without the cursor overlaid, and take the cursor from the pixels that differ. Sunshine uses the same screencopy path, which works here. Soft shadow edges would come out approximate.

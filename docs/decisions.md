@@ -35,7 +35,7 @@
 
 ## Open risks
 
-1. **Host cursor toggle state.** Hiding works on stock Sunshine, but the flag is global and lasts until Sunshine restarts. A bridge crash mid-session leaves it hidden. Escape hatch if this bites: small Sunshine patch that resets the flag per session.
+1. **Host cursor toggle state.** Hiding works on stock Sunshine, but the flag is global, can't be read, and lasts until Sunshine restarts. Mitigated: the bridge saves its record to disk, and the agent reports Sunshine restarts. It can still drift if Sunshine restarts while no agent is connected, or if someone presses the shortcut on the host. Ctrl+Alt+Shift+N in the stream fixes it. Escape hatch if this keeps biting: a small Sunshine patch that resets the flag per session.
 2. **CGNAT** unconfirmed. Breaks the forwarded-UDP-port plan for phase 2.
 3. **Admin second factor**: TOTP or passkey. Decide before the reverse proxy goes live.
 4. **Firefox rumble and clipboard** are browser-limited. Test early.

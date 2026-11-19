@@ -34,22 +34,27 @@ func modeFor(rule *regexp.Regexp, class string) string {
 	return agentproto.ModeAbsolute
 }
 
-// activeClass asks Hyprland for the focused window's class.
-func activeClass() (string, error) {
+// hyprRequest sends one request to Hyprland's IPC socket and returns the reply.
+func hyprRequest(req string) ([]byte, error) {
 	path, err := hyprSocket(".socket.sock")
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	c, err := net.DialTimeout("unix", path, 2*time.Second)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer c.Close()
 	c.SetDeadline(time.Now().Add(2 * time.Second))
-	if _, err := c.Write([]byte("j/activewindow")); err != nil {
-		return "", err
+	if _, err := c.Write([]byte(req)); err != nil {
+		return nil, err
 	}
-	b, err := io.ReadAll(c)
+	return io.ReadAll(c)
+}
+
+// activeClass asks Hyprland for the focused window's class.
+func activeClass() (string, error) {
+	b, err := hyprRequest("j/activewindow")
 	if err != nil {
 		return "", err
 	}
@@ -58,6 +63,28 @@ func activeClass() (string, error) {
 	}
 	_ = json.Unmarshal(b, &w) // "{}" when nothing is focused
 	return w.Class, nil
+}
+
+// screenWidth is the focused monitor's width in physical pixels, the space
+// Sunshine captures and Hyprland's cursor buffers live in, or 0 if unknown.
+// ponytail: assumes Sunshine streams the focused monitor; pass the captured
+// one if multi-monitor setups need it.
+func screenWidth() int {
+	b, err := hyprRequest("j/monitors")
+	if err != nil {
+		return 0
+	}
+	var mons []struct {
+		Width   int  `json:"width"`
+		Focused bool `json:"focused"`
+	}
+	_ = json.Unmarshal(b, &mons)
+	for _, m := range mons {
+		if m.Focused {
+			return m.Width
+		}
+	}
+	return 0
 }
 
 // watchFocus emits the mouse mode whenever the focused window's class moves
