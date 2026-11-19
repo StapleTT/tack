@@ -34,10 +34,11 @@ make test
 ## Try it
 
 ```
-./build/tack-bridge pair -host <sunshine-ip>    # enter the PIN at https://localhost:47990/pin on the host
 ./build/tack-bridge serve                       # homepage at https://<bridge-ip>:8443/, stream at /stream
 node web/check.mjs https://localhost:8443/stream 8   # headless Firefox end-to-end check (add --mouse on the host)
 ```
+
+Sign in with the generated password in `data/admin-password`. In the panel, enter the gaming PC’s LAN IP, choose **Pair and save host**, and type the displayed PIN into Sunshine at `https://localhost:47990/pin` on that PC. Existing CLI pairings load automatically. Resolution, frame rate, bitrate and Send to host menu choices are saved in each browser. For the headless check against a remote bridge, set `TACK_ADMIN_PASSWORD`.
 
 First visit per laptop: download the CA from the page link (`/ca.pem`) and import it as a trusted authority. On ChromeOS: Settings > Privacy and security > Security > Manage certificates > Authorities. On Windows: certmgr, Trusted Root Certification Authorities. Firefox needs its own import: Settings > Privacy & Security > Certificates.
 
@@ -51,4 +52,4 @@ State (client identity, paired host) lives in `./data` (`-data` to change).
 
 ## Status
 
-Phase 1 (LAN only). Spike 1 (host cursor) passed on stock Sunshine. Spike 2 (bare Moonlight session) passed on x86; still to run on the Pi. Step 2 (WebRTC relay to a bare HTTPS page) built and checked in headless Firefox; awaiting a real-laptop test. Step 3 (input) built; absolute mouse verified, the rest awaits real hardware. Step 4 (host agent) built and checked. Next: admin panel (step 5).
+Phase 1 (LAN only). Spike 1 (host cursor) passed on stock Sunshine. Spike 2 (bare Moonlight session) passed on x86; still to run on the Pi. Step 2 (WebRTC relay to a bare HTTPS page) built and checked in headless Firefox; awaiting a real-laptop test. Step 3 (input) built; absolute mouse verified, the rest awaits real hardware. Step 4 (host agent) built and checked. The LAN admin panel is built. Next: real-device checks and reconnect hardening.

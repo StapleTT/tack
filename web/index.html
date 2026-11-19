@@ -21,6 +21,12 @@
   .start { display: block; margin-top: 1.25rem; padding: .9rem; text-align: center; background: #3a7afe; color: #fff; border-radius: .5rem; text-decoration: none; font-weight: 600; font-size: 1.1rem; }
   .start[aria-disabled="true"] { background: #2a2d36; color: #777; pointer-events: none; }
   .start:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+  header { display:flex; align-items:baseline; justify-content:space-between }
+  input,select,button { font:inherit; border:1px solid #505563; border-radius:.4rem; background:#242832; color:inherit; padding:.45rem .65rem }
+  button { cursor:pointer }
+  fieldset { border:0; padding:0; margin:.8rem 0 0 }
+  label { display:inline-block; margin:.25rem .5rem .25rem 0 }
+  output { display:block; margin-top:.5rem }
   a { color: #8ab4ff; }
   ul { margin: .25rem 0; padding-left: 1.25rem; }
   kbd { font: 13px ui-monospace, monospace; background: #2a2d36; padding: .05rem .35rem; border-radius: .25rem; }
@@ -29,7 +35,7 @@
 </head>
 <body>
 <main>
-  <h1>tack</h1>
+  <header><h1>tack</h1><form method="post" action="/logout"><button>Sign out</button></form></header>
 
   <section class="card" aria-live="polite">
     <div class="host">
@@ -42,6 +48,21 @@
     <p id="notice"></p>
     <a class="start" id="start" href="/stream" aria-disabled="true">Start streaming</a>
   </section>
+
+  <h2>Sunshine host</h2>
+  <form class="card" id="pair">
+    <label>Host LAN IP <input id="address" required placeholder="192.168.1.10" autocomplete="off"></label>
+    <button>Pair and save host</button>
+    <output id="pair-result" aria-live="polite"></output>
+  </form>
+
+  <h2>This browser</h2>
+  <div class="card" id="preferences">
+    <label>Resolution <select id="res"><option value="">Native</option><option>1366x768</option><option>1920x1080</option></select></label>
+    <label>Frame rate <select id="fps"><option>60</option><option>30</option><option>120</option></select> fps</label>
+    <label>Bitrate <select id="bitrate"><option value="">Automatic</option><option value="12000">12 Mbps</option><option value="20000">20 Mbps</option><option value="30000">30 Mbps</option></select></label>
+    <fieldset id="send-keys"><legend>Show in the Send to host menu</legend></fieldset>
+  </div>
 
   <h2>First time on this device</h2>
   <div class="card">

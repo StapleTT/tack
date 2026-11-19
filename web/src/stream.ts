@@ -17,6 +17,12 @@ const soundBtn = $<HTMLButtonElement>("sound");
 
 // Optional overrides: /stream?fps=60&bitrate=20000&res=1280x720
 const params = new URLSearchParams(location.search);
+for (const key of ["res", "fps", "bitrate"]) {
+  if (!params.has(key)) params.set(key, localStorage.getItem("tack." + key) ?? "");
+}
+for (const button of menu.querySelectorAll<HTMLButtonElement>("button[data-act]")) {
+  button.hidden = localStorage.getItem("tack.key." + button.dataset.act) === "off";
+}
 const [resW, resH] = (params.get("res") ?? "").split("x").map(Number);
 
 let pc: RTCPeerConnection | null = null;
@@ -24,6 +30,10 @@ let input: Input | null = null;
 let control: RTCDataChannel | null = null;
 // Handles for web/check.mjs.
 const debug: Record<string, unknown> = ((window as unknown as { __tack: object }).__tack = {});
+const clientID = sessionStorage.getItem("tack.client") || crypto.randomUUID();
+sessionStorage.setItem("tack.client", clientID);
+let reconnectTimer = 0;
+let reconnectDeadline = 0;
 let statsTimer = 0;
 let showStats = false;
 
@@ -36,6 +46,7 @@ function show(text: string, button = "Connect") {
 }
 
 function stop() {
+  clearTimeout(reconnectTimer);
   clearInterval(statsTimer);
   hostCursor.cancel();
   input?.stop();
@@ -134,7 +145,7 @@ function waitForIce(conn: RTCPeerConnection, ms: number): Promise<void> {
   });
 }
 
-async function connect() {
+async function connect(resumeOnly = false) {
   stop();
   connectBtn.disabled = true;
   message.textContent = "Connecting…";
@@ -160,6 +171,7 @@ async function connect() {
   };
 
   ctl.onmessage = (e) => {
+    if (conn !== pc) return;
     const msg = JSON.parse(e.data);
     if (msg.type === "kicked") { stop(); show("Taken over by another device.", "Take back"); }
     else if (msg.type === "ended") { stop(); show(`Stream ended: ${msg.reason}`, "Reconnect"); }
@@ -172,8 +184,16 @@ async function connect() {
 
   conn.onconnectionstatechange = () => {
     if (conn !== pc) return;
-    if (conn.connectionState === "connected") overlay.hidden = true;
-    if (conn.connectionState === "failed") { stop(); show("Connection lost.", "Reconnect"); }
+    clearTimeout(reconnectTimer);
+    if (conn.connectionState === "disconnected") {
+      reconnectDeadline = Date.now() + 30_000;
+      reconnectTimer = window.setTimeout(() => start(true), 6000);
+    }
+    if (conn.connectionState === "connected") { reconnectDeadline = 0; overlay.hidden = true; }
+    if (conn.connectionState === "failed") {
+      if (Date.now() < reconnectDeadline) start(true);
+      else { stop(); show("Connection lost.", "Reconnect"); }
+    }
   };
 
   const offer = await conn.createOffer();
@@ -185,6 +205,7 @@ async function connect() {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
+      client_id: clientID, resume_only: resumeOnly,
       sdp: conn.localDescription?.sdp,
       width: resW || Math.round(screen.width * dpr),
       height: resH || Math.round(screen.height * dpr),
@@ -199,10 +220,11 @@ async function connect() {
   }
   const { sdp } = await res.json();
   await conn.setRemoteDescription({ type: "answer", sdp });
+  lastFrames = lastDecodeTime = 0;
   statsTimer = setInterval(() => updateStats(conn), 1000);
 }
 
-// Minimal debug line until the real stats overlay lands (roadmap step 5).
+// Receiver counters start over for each peer connection.
 let lastFrames = 0, lastDecodeTime = 0;
 async function updateStats(conn: RTCPeerConnection) {
   let line = "";
@@ -223,6 +245,16 @@ async function updateStats(conn: RTCPeerConnection) {
   statsEl.hidden = !showStats;
 }
 
-const start = () => { connect().catch((err) => { stop(); show(`Error: ${err}`, "Retry"); }); };
-connectBtn.addEventListener("click", start);
+function start(resumeOnly = false) {
+  if (!resumeOnly) reconnectDeadline = 0;
+  connect(resumeOnly).catch((err) => {
+    stop();
+    if (resumeOnly && Date.now() + 1500 < reconnectDeadline) {
+      show("Waiting for the network…", "");
+      connectBtn.hidden = true;
+      reconnectTimer = window.setTimeout(() => start(true), 1500);
+    } else show(`Connection failed: ${err}`, "Retry");
+  });
+}
+connectBtn.addEventListener("click", () => start());
 start(); // the click that opened this page is the "one click"

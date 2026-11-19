@@ -27,6 +27,8 @@ import (
 
 // Request is what the browser POSTs to start streaming.
 type Request struct {
+	ClientID    string `json:"client_id"`
+	ResumeOnly  bool   `json:"resume_only"`
 	SDP         string `json:"sdp"`
 	Width       int    `json:"width"`
 	Height      int    `json:"height"`
@@ -39,9 +41,11 @@ type Manager struct {
 	app  string // app title to launch when nothing is running
 	api  *webrtc.API
 
-	mu     sync.Mutex
-	cur    *Session
-	lastID int
+	mu          sync.Mutex
+	cur         *Session
+	lastID      int
+	owner       string
+	resumeUntil time.Time
 	// live mirrors cur for readers that must not wait on mu (Start holds it
 	// for the whole host launch).
 	live atomic.Pointer[Session]
@@ -125,6 +129,25 @@ func NewManager(host *nvhttp.Client, app string, udpPort int, dataDir string) (*
 	return m, nil
 }
 
+// SetHost installs a successfully paired host while streaming is idle.
+func (m *Manager) SetHost(c *nvhttp.Client) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.host == nil || m.host.Host != c.Host {
+		m.cursor = cursorState{}
+		m.saveCursor()
+	}
+	m.owner = ""
+	m.host = c
+}
+
+var ErrResumeExpired = errors.New("reconnect window closed or another device took over")
+
+// The authenticated tab may recover its own stream until ICE times out.
+func (m *Manager) canResume(client string, now time.Time) bool {
+	return client != "" && m.owner == client && ((m.cur != nil && m.resumeUntil.IsZero()) || now.Before(m.resumeUntil))
+}
+
 // Start takes over from any current session, launches Moonlight and returns
 // the SDP answer once the host stream is up.
 func (m *Manager) Start(ctx context.Context, req Request) (string, error) {
@@ -147,6 +170,9 @@ func (m *Manager) Start(ctx context.Context, req Request) (string, error) {
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if req.ResumeOnly && !m.canResume(req.ClientID, time.Now()) {
+		return "", ErrResumeExpired
+	}
 	if m.cur != nil {
 		m.endLocked(m.cur, reasonKicked)
 	}
@@ -180,6 +206,17 @@ func (m *Manager) Start(ctx context.Context, req Request) (string, error) {
 	})
 	pc.OnConnectionStateChange(func(st webrtc.PeerConnectionState) {
 		log.Printf("session %d: peer %s", s.id, st)
+		if st == webrtc.PeerConnectionStateDisconnected || st == webrtc.PeerConnectionStateConnected {
+			m.mu.Lock()
+			if m.cur == s {
+				if st == webrtc.PeerConnectionStateDisconnected {
+					m.resumeUntil = time.Now().Add(30 * time.Second)
+				} else {
+					m.resumeUntil = time.Time{}
+				}
+			}
+			m.mu.Unlock()
+		}
 		if st == webrtc.PeerConnectionStateFailed || st == webrtc.PeerConnectionStateClosed {
 			go m.end(s, "")
 		}
@@ -227,6 +264,8 @@ func (m *Manager) Start(ctx context.Context, req Request) (string, error) {
 		return fail(err)
 	}
 	m.cur = s
+	m.owner = req.ClientID
+	m.resumeUntil = time.Time{}
 	m.live.Store(s)
 	m.syncCursor() // the browser draws its own cursor, so hide the host's
 	return pc.LocalDescription().SDP, nil
@@ -420,6 +459,11 @@ func (m *Manager) endLocked(s *Session, reason string) {
 	s.mu.Unlock()
 
 	if m.cur == s {
+		if reason != "" {
+			m.owner = ""
+		} else if m.resumeUntil.IsZero() {
+			m.resumeUntil = time.Now().Add(30 * time.Second)
+		}
 		s.inputMu.Lock()
 		s.live = false
 		s.inputMu.Unlock()

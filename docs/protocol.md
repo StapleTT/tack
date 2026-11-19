@@ -6,9 +6,11 @@ This file describes what exists. Planned parts are marked.
 
 | Route | What |
 |---|---|
-| `GET /` | Homepage: host status, Start streaming, CA download, hotkeys |
+| `GET /` | LAN admin panel, pairing, per-browser preferences and stream launch |
 | `GET /stream` | Stream client. Connects on load. Optional `?fps=60&bitrate=20000&res=1280x720` overrides. |
 | `GET /api/status` | `{"host","online","paired","app","streaming","error"}` for the homepage |
+| `GET, POST /login`, `POST /logout` | Sign in with the bridge admin password or revoke the browser session. Admin pages and APIs require the secure session cookie. |
+| `POST /api/pair` | JSON with `address` (LAN IP) and `pin` (four digits). Saves the pinned host after successful pairing. |
 | `GET /ca.pem` | Local CA certificate |
 | `POST /api/session` | Start a session (below) |
 
@@ -114,4 +116,4 @@ The agent ignores clipboard changes that match the text both sides already have,
 - Ending a session never quits the host app.
 - Host cursor: exactly one cursor is visible at all times. While the browser draws its own (absolute mode, or relative mode waiting for a click), the host cursor is kept out of the video. While the pointer is locked, the host cursor is drawn into the video; a game that hides its cursor still hides it. The bridge hides it at session start and keeps it hidden across takeovers. It shows it again when the last session ends or the bridge shuts down. If the host ended the stream, the connection is gone, so the cursor stays hidden until the next session (which expects it hidden).
 - Sunshine's flag can only be toggled, never read, so the bridge keeps a record in `data/host-cursor.json` (whether it is hidden, and when it last flipped). The record survives bridge crashes. The flag resets to "drawn" when Sunshine restarts, so when the agent reports a Sunshine uptime shorter than the time since the last flip, the bridge drops a "hidden" record. A toggle that could not be sent never changes the record. If the record is still wrong (Sunshine restarted with no agent connected, or someone pressed the shortcut on the host), press Ctrl+Alt+Shift+N in the stream or use "Toggle host cursor" in the menu. Both flip the flag once without changing what the bridge thinks it should be.
-- Browser gone: for now pion's ICE timeouts end the session about 30 s after the browser disappears (5 s to disconnected, 25 s more to failed). Same-client resume inside that window is planned for step 5.
+- After six seconds disconnected, the tab requests a new peer connection with its existing `client_id` and `resume_only: true`. The bridge accepts that request for the current owner within the 30-second disconnect grace. An explicit new connection can take over immediately.

@@ -79,6 +79,8 @@ func main() {
 	}
 }
 
+var errNoHost = errors.New("no paired host; pair in the admin panel or run tack-bridge pair")
+
 func loadHost(dataDir string) (*nvhttp.Client, error) {
 	id, err := nvhttp.LoadOrCreateIdentity(dataDir)
 	if err != nil {
@@ -86,7 +88,7 @@ func loadHost(dataDir string) (*nvhttp.Client, error) {
 	}
 	b, err := os.ReadFile(filepath.Join(dataDir, "host.json"))
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, errors.New("no paired host; run: tack-bridge pair -host <address>")
+		return nil, errNoHost
 	}
 	if err != nil {
 		return nil, err
@@ -115,18 +117,35 @@ func pair(ctx context.Context, dataDir, addr string) error {
 	}
 	pin := nvhttp.NewPIN()
 	fmt.Printf("Pairing with %s (Sunshine %s).\nEnter PIN %s in Sunshine's web UI: https://localhost:47990/pin on the host\n", si.Hostname, si.AppVersion, pin)
-	pairCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-	defer cancel()
-	cert, err := c.Pair(pairCtx, si.AppVersion, pin)
-	if err != nil {
-		return err
-	}
-	b, _ := json.MarshalIndent(host{Address: addr, HTTPSPort: c.HTTPSPort, ServerCert: cert}, "", "  ")
-	if err := os.WriteFile(filepath.Join(dataDir, "host.json"), b, 0o600); err != nil {
+	if err := pairAndSave(ctx, dataDir, c, si.AppVersion, pin); err != nil {
 		return err
 	}
 	fmt.Println("Paired.")
 	return nil
+}
+
+func pairAndSave(ctx context.Context, dataDir string, c *nvhttp.Client, version, pin string) error {
+	pairCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	cert, err := c.Pair(pairCtx, version, pin)
+	if err != nil {
+		return err
+	}
+	b, _ := json.MarshalIndent(host{Address: c.Host, HTTPSPort: c.HTTPSPort, ServerCert: cert}, "", "  ")
+	tmp, err := os.CreateTemp(dataDir, "host-*.tmp")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(b); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), filepath.Join(dataDir, "host.json"))
+
 }
 
 func apps(ctx context.Context, dataDir string) error {

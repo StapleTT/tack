@@ -10,9 +10,12 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"net/netip"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/net/websocket"
@@ -26,7 +29,7 @@ import (
 
 func serve(ctx context.Context, dataDir, listen string, udpPort int, app string) error {
 	host, err := loadHost(dataDir)
-	if err != nil {
+	if err != nil && !errors.Is(err, errNoHost) {
 		return err
 	}
 	names := tlsca.LocalNames()
@@ -44,6 +47,20 @@ func serve(ctx context.Context, dataDir, listen string, udpPort int, app string)
 		return err
 	}
 
+	passwordPath := filepath.Join(dataDir, "admin-password")
+	password, err := loadOrCreateToken(passwordPath)
+	if err != nil {
+		return err
+	}
+	if password == "" {
+		return errors.New("empty admin-password")
+	}
+	log.Printf("LAN admin password file: %s", passwordPath)
+	var hostMu sync.RWMutex
+	var savedHost nvhttp.Client
+	if host != nil {
+		savedHost = *host
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFileFS(w, r, web.Files, "index.html")
@@ -53,16 +70,66 @@ func serve(ctx context.Context, dataDir, listen string, udpPort int, app string)
 	})
 	mux.Handle("GET /dist/", http.FileServerFS(web.Files))
 	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) {
+		if !hostMu.TryRLock() {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(status{Error: "Pairing in progress"})
+			return
+		}
+		current := savedHost
+		hostMu.RUnlock()
+		if current.Host == "" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(status{Error: "No host paired"})
+			return
+		}
 		sctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 		defer cancel()
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(hostStatus(sctx, host, mgr))
+		json.NewEncoder(w).Encode(hostStatus(sctx, &current, mgr))
 	})
 	mux.HandleFunc("GET /ca.pem", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/x-pem-file")
 		w.Write(caPEM)
 	})
 	mux.Handle("GET /agent", agentHandler(mgr, agentToken))
+	mux.HandleFunc("POST /api/pair", func(w http.ResponseWriter, r *http.Request) {
+		var req struct{ Address, PIN string }
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&req); err != nil {
+			http.Error(w, "Invalid pairing request", 400)
+			return
+		}
+		ip, err := netip.ParseAddr(req.Address)
+		if err != nil || !(ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast()) || !pinPattern.MatchString(req.PIN) {
+			http.Error(w, "Enter a LAN IP address and a four-digit PIN", 400)
+			return
+		}
+		if !hostMu.TryLock() {
+			http.Error(w, "Host is busy", 409)
+			return
+		}
+		defer hostMu.Unlock()
+		if mgr.Streaming() {
+			http.Error(w, "Disconnect the active stream before pairing", 409)
+			return
+		}
+		id, err := nvhttp.LoadOrCreateIdentity(dataDir)
+		if err != nil {
+			http.Error(w, "Cannot read bridge identity", 500)
+			return
+		}
+		c := nvhttp.NewClient(ip.String(), id)
+		si, err := c.ServerInfo(r.Context())
+		if err == nil {
+			err = pairAndSave(r.Context(), dataDir, c, si.AppVersion, req.PIN)
+		}
+		if err != nil {
+			http.Error(w, err.Error(), 502)
+			return
+		}
+		mgr.SetHost(c)
+		savedHost = *c
+		w.WriteHeader(http.StatusNoContent)
+	})
 	mux.HandleFunc("POST /api/session", func(w http.ResponseWriter, r *http.Request) {
 		var req session.Request
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&req); err != nil {
@@ -71,9 +138,22 @@ func serve(ctx context.Context, dataDir, listen string, udpPort int, app string)
 		}
 		sctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 		defer cancel()
+		if !hostMu.TryRLock() {
+			http.Error(w, "Pairing in progress", 409)
+			return
+		}
+		defer hostMu.RUnlock()
+		if savedHost.Host == "" {
+			http.Error(w, "Pair a host first", 409)
+			return
+		}
 		answer, err := mgr.Start(sctx, req)
 		if err != nil {
 			log.Printf("session start: %v", err)
+			if errors.Is(err, session.ErrResumeExpired) {
+				http.Error(w, err.Error(), http.StatusConflict)
+				return
+			}
 			http.Error(w, err.Error(), http.StatusBadGateway)
 			return
 		}
@@ -83,7 +163,7 @@ func serve(ctx context.Context, dataDir, listen string, udpPort int, app string)
 
 	srv := &http.Server{
 		Addr:              listen,
-		Handler:           mux,
+		Handler:           adminAccess(mux, password),
 		TLSConfig:         &tls.Config{Certificates: []tls.Certificate{cert}},
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -111,6 +191,8 @@ type status struct {
 	Streaming bool   `json:"streaming"`
 	Error     string `json:"error,omitempty"`
 }
+
+var pinPattern = regexp.MustCompile(`^[0-9]{4}$`)
 
 func hostStatus(ctx context.Context, host *nvhttp.Client, mgr *session.Manager) status {
 	st := status{Host: host.Host, Streaming: mgr.Streaming()}
