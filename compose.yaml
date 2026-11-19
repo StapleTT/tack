@@ -1,0 +1,9 @@
+services:
+  bridge:
+    build: .
+    network_mode: host
+    user: "${TACK_UID:-1000}:${TACK_GID:-1000}"
+    volumes:
+      - ./data:/srv/tack/data
+    restart: unless-stopped
+    stop_grace_period: 30s

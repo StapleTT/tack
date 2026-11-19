@@ -12,6 +12,8 @@ Browser (Chrome/Firefox) ──HTTPS + WSS + WebRTC──▶ Pi 5 bridge ──M
 
 ## Docs
 
+Start with the [fresh Raspberry Pi installation guide](docs/raspberry-pi.md) for Docker Compose or a native systemd service.
+
 - [Architecture](docs/architecture.md): components, responsibilities, repo layout
 - [Protocol](docs/protocol.md): browser and host-agent messages
 - [Roadmap](docs/roadmap.md): build order, phases, exit criteria

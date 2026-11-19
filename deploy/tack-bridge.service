@@ -1,0 +1,18 @@
+[Unit]
+Description=tack LAN streaming bridge
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/tack-bridge serve -data /var/lib/tack
+User=tack
+Group=tack
+StateDirectory=tack
+StateDirectoryMode=0700
+UMask=0077
+KillSignal=SIGINT
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
