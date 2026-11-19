@@ -16,6 +16,17 @@
 - Stock Sunshine, no patch: the host cursor is hidden by sending Sunshine's Ctrl+Alt+Shift+N toggle at session start and again at session end (see spike 1).
 - No adaptive bitrate in v1 (Moonlight owns encoder settings).
 
+- Browser session start is a single HTTPS POST (non-trickle ICE), not a WebSocket. Server-to-browser messages go over the `control` data channel.
+- Audio and video use separate stream IDs so the browser does not hold video back for lip sync.
+- All WebRTC media uses one UDP port (default 8189), ready for the single port-forward in phase 2.
+- Frontend build is `tsc` only, no bundler, until there is a reason for one.
+- Input uses one reliable, ordered data channel with a compact binary format.
+- Client hotkeys are Ctrl+Alt+Shift + H (menu), F (fullscreen), M (mouse mode), S (stats), the same family as Moonlight's. The client also swallows Ctrl+Alt+Shift+N and +F1–F12, which are Sunshine's host shortcuts, so they cannot flip the cursor or switch displays.
+- Keys are mapped by physical code (`KeyboardEvent.code`) to Windows VK codes; the host's layout decides characters. Autorepeat is left to the host. All held keys and buttons are released on blur or tab hide.
+- ChromeOS: the Search key goes to the host as Super. The top-row Back/Forward/Refresh/Fullscreen/Overview keys send F1–F5 (Search+top row already gives real F-keys). Brightness and volume keys stay with the laptop.
+- Firefox has no Keyboard Lock, so a "Send to host" menu covers Esc, Super, Alt+Tab, Alt+F4 and Ctrl+Alt+Del. Making the list configurable belongs with the admin panel (step 5).
+- Gamepads: browser "standard" layout mapped to an Xbox pad, stable slots (lowest free, kept until disconnect), up to 4. Polled every 4 ms; state is sent only when it changes. Rumble effects are re-issued every 4 s because browsers cap effect duration.
+- Relative mode uses `pointerrawupdate` where available (Chrome) and asks for `unadjustedMovement` (raw, unaccelerated deltas), falling back if unsupported.
 - Bridge encrypts audio and input only, not video (`ENCFLG_AUDIO`), to save Pi CPU. Revisit for the internet phase.
 
 ## Open risks
@@ -25,4 +36,5 @@
 3. **Admin second factor**: TOTP or passkey. Decide before the reverse proxy goes live.
 4. **Firefox rumble and clipboard** are browser-limited. Test early.
 5. **Controller count** assumed 1 to 2.
+7. **H.264 profile negotiation.** Sunshine sends High profile. The bridge offers High (`64001f`) and also accepts constrained baseline (`42e01f`), counting on the browser's decoder to handle High anyway. Headless Firefox on Linux does. Chrome on ChromeOS/Windows and Firefox on Windows are untested.
 6. **Reverse proxy scope**: carries page and signaling only. Media is UDP and bypasses it.

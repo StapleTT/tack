@@ -1,6 +1,6 @@
 MCC := third_party/moonlight-common-c
 
-.PHONY: all mcc bridge test clean
+.PHONY: all mcc web bridge test clean
 
 all: bridge
 
@@ -12,11 +12,14 @@ build/mcc/libmoonlight-common-c.a:
 	cmake -S $(MCC) -B build/mcc -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release
 	cmake --build build/mcc -j
 
-bridge: mcc
+web:
+	cd web && npm install --silent && npx tsc
+
+bridge: mcc web
 	go build -o build/tack-bridge ./bridge/cmd/tack-bridge
 
-test: mcc
+test: mcc web
 	go test ./...
 
 clean:
-	rm -rf build
+	rm -rf build web/dist

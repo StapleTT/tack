@@ -253,3 +253,6 @@ func goRumble(n, lo, hi C.ushort) {
 		h.Rumble(uint16(n), uint16(lo), uint16(hi))
 	}
 }
+
+// RequestIDR asks the host for a keyframe soon (e.g. a browser sent a PLI).
+func RequestIDR() { C.LiRequestIdrFrame() }

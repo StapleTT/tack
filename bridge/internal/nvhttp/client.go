@@ -243,3 +243,10 @@ func (c *Client) Cancel(ctx context.Context) error {
 func (c *Client) unpair() {
 	_, _ = c.request(context.Background(), false, "unpair", nil, 5*time.Second)
 }
+
+// NewInputKey returns a random remote-input AES key and key ID for a launch.
+func NewInputKey() (key [16]byte, id int32) {
+	copy(key[:], randBytes(16))
+	b := randBytes(4)
+	return key, int32(uint32(b[0])<<24 | uint32(b[1])<<16 | uint32(b[2])<<8 | uint32(b[3]))
+}

@@ -1,16 +1,13 @@
 // Command tack-bridge relays a Sunshine stream to browsers over WebRTC.
 //
-// For now it carries the spike subcommands:
-//
-//	tack-bridge pair   -host 192.168.1.108
-//	tack-bridge apps
-//	tack-bridge stream -app Desktop -seconds 10 -out spikes/out/cap.h264
+//	tack-bridge pair   -host 192.168.1.108   pair with Sunshine (once)
+//	tack-bridge serve                       serve the web client
+//	tack-bridge apps                        list host apps
+//	tack-bridge stream -seconds 10 -out x.h264   spike: record a raw stream
 package main
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -37,7 +34,7 @@ type host struct {
 func main() {
 	log.SetFlags(log.Ltime | log.Lmicroseconds)
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: tack-bridge pair|apps|stream [flags]")
+		fmt.Fprintln(os.Stderr, "usage: tack-bridge pair|serve|apps|stream [flags]")
 		os.Exit(2)
 	}
 	cmd, args := os.Args[1], os.Args[2:]
@@ -53,6 +50,12 @@ func main() {
 		addr := fs.String("host", "", "Sunshine host address")
 		fs.Parse(args)
 		err = pair(ctx, *dataDir, *addr)
+	case "serve":
+		listen := fs.String("listen", ":8443", "HTTPS listen address")
+		udpPort := fs.Int("udp-port", 8189, "UDP port for all WebRTC media")
+		app := fs.String("app", "Desktop", "host app to launch when none is running")
+		fs.Parse(args)
+		err = serve(ctx, *dataDir, *listen, *udpPort, *app)
 	case "apps":
 		fs.Parse(args)
 		err = apps(ctx, *dataDir)
@@ -176,10 +179,7 @@ func stream(ctx context.Context, dataDir string, o streamOpts) error {
 	}
 
 	var lp nvhttp.LaunchParams
-	rand.Read(lp.RIKey[:])
-	var idb [4]byte
-	rand.Read(idb[:])
-	lp.RIKeyID = int32(binary.BigEndian.Uint32(idb[:]))
+	lp.RIKey, lp.RIKeyID = nvhttp.NewInputKey()
 	lp.AppID, lp.Width, lp.Height, lp.FPS = appID, o.width, o.height, o.fps
 	lp.SurroundAudioInfo = moonlight.SurroundAudioInfoStereo
 	lp.ExtraQuery = moonlight.LaunchQuery()

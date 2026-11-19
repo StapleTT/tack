@@ -73,3 +73,20 @@ func ToggleHostCursor() {
 	Key(VKLMenu, false, ModCtrl)
 	Key(VKLControl, false, 0)
 }
+
+// Controller sends the full state of gamepad slot (0-3). mask has a bit set
+// for every connected slot; clearing a slot's bit unplugs it on the host.
+// Buttons use Moonlight's flags (A_FLAG etc.); stick Y is positive up.
+func Controller(slot uint8, mask uint16, buttons uint32, lt, rt uint8, lx, ly, rx, ry int16) {
+	C.LiSendMultiControllerEvent(C.uint8_t(slot), C.uint16_t(mask), C.int(buttons),
+		C.uchar(lt), C.uchar(rt), C.short(lx), C.short(ly), C.short(rx), C.short(ry))
+}
+
+// ControllerArrival announces an Xbox-style pad with analog triggers and
+// rumble in slot.
+func ControllerArrival(slot uint8, mask uint16) {
+	const allButtons = C.A_FLAG | C.B_FLAG | C.X_FLAG | C.Y_FLAG | C.UP_FLAG | C.DOWN_FLAG | C.LEFT_FLAG |
+		C.RIGHT_FLAG | C.LB_FLAG | C.RB_FLAG | C.PLAY_FLAG | C.BACK_FLAG | C.LS_CLK_FLAG | C.RS_CLK_FLAG | C.SPECIAL_FLAG
+	C.LiSendControllerArrivalEvent(C.uint8_t(slot), C.uint16_t(mask), C.LI_CTYPE_XBOX,
+		C.uint32_t(allButtons), C.LI_CCAP_ANALOG_TRIGGERS|C.LI_CCAP_RUMBLE)
+}

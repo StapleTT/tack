@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tack</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; color: #eee; font: 16px system-ui, sans-serif; overflow: hidden; }
+  video { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  #overlay { position: fixed; inset: 0; display: flex; flex-direction: column; gap: 1rem; align-items: center; justify-content: center; background: rgba(0,0,0,.75); }
+  #overlay[hidden] { display: none; }
+  button { font: inherit; padding: .75rem 2rem; border: 0; border-radius: .5rem; background: #3a7afe; color: #fff; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  #stats { position: fixed; top: .5rem; left: .5rem; font: 12px ui-monospace, monospace; background: rgba(0,0,0,.6); padding: .25rem .5rem; white-space: pre; pointer-events: none; }
+  a { color: #8ab4ff; }
+  #banner { position: fixed; top: 1rem; left: 50%; transform: translateX(-50%); background: rgba(20,20,20,.85); padding: .5rem 1rem; border-radius: .5rem; pointer-events: none; }
+  #menu { position: fixed; top: 1rem; right: 1rem; width: 18rem; background: rgba(20,20,20,.95); border-radius: .5rem; padding: 1rem; display: grid; gap: .5rem; }
+  #menu[hidden], #banner[hidden] { display: none; }
+  #menu button { padding: .4rem .75rem; background: #333; text-align: left; }
+  #menu h2 { font-size: .8rem; margin: .5rem 0 0; color: #aaa; font-weight: normal; }
+  kbd { font: 12px ui-monospace, monospace; background: #333; padding: 0 .3rem; border-radius: .2rem; }
+</style>
+</head>
+<body>
+<video id="video" autoplay playsinline></video>
+<div id="stats" hidden></div>
+<div id="banner" hidden>Click or press a key to capture the mouse</div>
+<div id="menu" hidden>
+  <small>Menu: <kbd>Ctrl+Alt+Shift+H</kbd></small>
+  <button data-act="fullscreen">Fullscreen <kbd>Ctrl+Alt+Shift+F</kbd></button>
+  <button data-act="mode">Mouse: <span id="mode">absolute</span> <kbd>Ctrl+Alt+Shift+M</kbd></button>
+  <button data-act="stats">Stats <kbd>Ctrl+Alt+Shift+S</kbd></button>
+  <h2>Send to host</h2>
+  <button data-act="esc">Esc</button>
+  <button data-act="win">Super (Win)</button>
+  <button data-act="alttab">Alt+Tab</button>
+  <button data-act="altf4">Alt+F4</button>
+  <button data-act="cad">Ctrl+Alt+Del</button>
+  <h2>Fixes</h2>
+  <button data-act="cursor">Toggle host cursor (two cursors or none)</button>
+  <button data-act="disconnect">Disconnect</button>
+</div>
+<div id="overlay">
+  <p id="message" role="status">Ready</p>
+  <button id="connect">Connect</button>
+  <small><a href="/ca.pem" download="tack-ca.pem">Download the tack CA certificate</a></small>
+</div>
+<script type="module" src="/dist/stream.js"></script>
+</body>
+</html>

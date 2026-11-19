@@ -22,23 +22,30 @@ Source plan: `Plan.pdf` (2026-11-18).
 
 ## Build
 
-Needs Go, cmake, a C compiler and OpenSSL headers.
+Needs Go, Node (for `tsc`), cmake, a C compiler and OpenSSL headers.
 
 ```
 git submodule update --init --recursive
-make bridge            # builds moonlight-common-c statically, then build/tack-bridge
+make bridge            # moonlight-common-c (static) + web (tsc) + build/tack-bridge
+make test
 ```
 
 ## Try it
 
 ```
 ./build/tack-bridge pair -host <sunshine-ip>    # enter the PIN at https://localhost:47990/pin on the host
-./build/tack-bridge apps
-./build/tack-bridge stream -app Desktop -seconds 10 -out spikes/out/cap.h264
+./build/tack-bridge serve                       # https://<bridge-ip>:8443, media on udp/8189
+node web/check.mjs https://localhost:8443/ 8    # headless Firefox end-to-end check (add --mouse on the host)
 ```
+
+First visit per laptop: download the CA from the page link (`/ca.pem`) and import it as a trusted authority. On ChromeOS: Settings > Privacy and security > Security > Manage certificates > Authorities. On Windows: certmgr, Trusted Root Certification Authorities. Firefox needs its own import: Settings > Privacy & Security > Certificates.
+
+While streaming, Ctrl+Alt+Shift + H opens the menu, F toggles fullscreen (with Keyboard Lock on Chrome), M switches mouse mode (absolute/relative), and S shows stats.
+
+Spike tools: `tack-bridge apps`, `tack-bridge stream -seconds 10 -out spikes/out/cap.h264 [-cursor-spike]`.
 
 State (client identity, paired host) lives in `./data` (`-data` to change).
 
 ## Status
 
-Phase 1 (LAN only). Spike 1 (host cursor) passed on stock Sunshine. Spike 2 (bare Moonlight session) passed on x86; still to run on the Pi. Next: WebRTC relay to a bare HTTPS page (roadmap step 2).
+Phase 1 (LAN only). Spike 1 (host cursor) passed on stock Sunshine. Spike 2 (bare Moonlight session) passed on x86; still to run on the Pi. Step 2 (WebRTC relay to a bare HTTPS page) built and checked in headless Firefox; awaiting a real-laptop test. Step 3 (input) built; absolute mouse verified, the rest awaits real hardware. Next: host agent (step 4).

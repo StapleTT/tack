@@ -20,7 +20,7 @@ Single binary, one systemd service.
 - Wraps `moonlight-common-c` through cgo: pairing, RTSP, control stream, input injection.
 - Relays encoded video (H.264/AV1) and Opus audio into WebRTC tracks. Packetizes to RTP only; never decodes or transcodes.
 - Embeds and serves the frontend (static files) over HTTPS.
-- Hosts the signaling WebSocket for browsers and the agent WebSocket for the host agent.
+- Serves `POST /api/session` for browsers (SDP offer in, answer out) and, later, the agent WebSocket for the host agent.
 - Owns session state: who is streaming, takeover, reconnect grace.
 - Stores config: admin credentials, the saved host, Sunshine client certificate, presets.
 
@@ -46,7 +46,8 @@ The detector is swappable: a later Hyprland plugin reporting real pointer-constr
 | Path | Transport |
 |---|---|
 | Page, admin API | HTTPS to Pi |
-| Signaling (SDP, ICE, session control) | WSS to Pi |
+| Session start (SDP offer/answer) | HTTPS POST to Pi |
+| Session control (kicked, ended, later mouse mode) | WebRTC data channel `control` |
 | Video, audio | WebRTC (SRTP over UDP), Pi to browser |
 | Mouse, keyboard, gamepad, clipboard | WebRTC data channel, browser to Pi, then Moonlight control stream (clipboard via agent) |
 | Rumble | Moonlight to Pi, data channel to browser |
@@ -56,7 +57,8 @@ The detector is swappable: a later Hyprland plugin reporting real pointer-constr
 
 Pointer lock, Keyboard Lock and async clipboard need a secure context, so HTTPS from day one.
 
-- Small local CA signs a cert for the Pi's static IP (IP SAN).
+- The bridge creates a local CA on first run (`data/tls/ca.pem`). At every start it issues a new server cert covering all of the machine's IPv4 addresses plus `localhost`, so a changed IP never breaks TLS.
+- The page links to `/ca.pem` for download.
 - Import the CA once per laptop: ChromeOS under Settings > Privacy and security > Manage certificates > Authorities; Windows system store for Chrome/Edge; Firefox separately (own store).
 
 ## Repo layout
@@ -67,9 +69,16 @@ One Go module (`tack`) at the root, shared by bridge and agent.
 bridge/cmd/tack-bridge/     bridge binary
 bridge/internal/nvhttp/     GameStream HTTP(S): identity, pairing, serverinfo, applist, launch
 bridge/internal/moonlight/  cgo wrapper over moonlight-common-c (session, callbacks, input)
+bridge/internal/session/    one browser PeerConnection tied to one Moonlight session; takeover
+bridge/internal/tlsca/      local CA + per-start server certificate
+web/                        TypeScript stream page (tsc only, no bundler), embedded via web/embed.go
+  src/stream.ts             connection, overlay, menu
+  src/input.ts              mouse modes, keyboard, gamepad, rumble
+  src/keymap.ts             KeyboardEvent.code to Windows VK, ChromeOS choices
+bridge/internal/session/input.go   input wire format parser and dispatch
+web/check.mjs               headless Firefox end-to-end check (WebDriver BiDi, no deps)
 third_party/moonlight-common-c/  git submodule, built static into build/mcc by `make mcc`
 agent/                      host agent (not started)
-web/                        TypeScript: stream/ (framework-free), admin/ (not started)
 deploy/                     systemd units, CA scripts (not started)
 spikes/out/                 spike captures (gitignored)
 ```
