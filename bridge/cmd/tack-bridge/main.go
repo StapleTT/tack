@@ -7,11 +7,13 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -34,7 +36,7 @@ type host struct {
 func main() {
 	log.SetFlags(log.Ltime | log.Lmicroseconds)
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: tack-bridge pair|serve|apps|stream [flags]")
+		fmt.Fprintln(os.Stderr, "usage: tack-bridge pair|serve|apps|stream|passwd [flags]")
 		os.Exit(2)
 	}
 	cmd, args := os.Args[1], os.Args[2:]
@@ -46,6 +48,14 @@ func main() {
 
 	var err error
 	switch cmd {
+	case "passwd":
+		fs.Parse(args)
+		var line string
+		line, err = bufio.NewReader(io.LimitReader(os.Stdin, 75)).ReadString('\n')
+		if err == nil || errors.Is(err, io.EOF) {
+			line = strings.TrimSuffix(strings.TrimSuffix(line, "\n"), "\r")
+			_, err = savePassword(filepath.Join(*dataDir, "admin-password"), []byte(line))
+		}
 	case "pair":
 		addr := fs.String("host", "", "Sunshine host address")
 		fs.Parse(args)

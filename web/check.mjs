@@ -11,7 +11,7 @@
 // Needs a running `tack-bridge serve` and Firefox on PATH. Uses WebDriver BiDi
 // over Node's built-in WebSocket, so there are no dependencies.
 import { spawn, execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -83,10 +83,7 @@ const evaluate = async (expression) => {
 if (await evaluate('location.pathname === "/login"')) {
   const target = new URL(url);
   if (await evaluate("location.origin") !== target.origin) throw new Error("Unexpected login origin");
-  let password = process.env.TACK_ADMIN_PASSWORD;
-  if (!password && ["localhost", "127.0.0.1", "[::1]"].includes(target.hostname)) {
-    password = readFileSync("data/admin-password", "utf8").trim();
-  }
+  const password = process.env.TACK_ADMIN_PASSWORD;
   if (!password || target.protocol !== "https:") throw new Error("Use an HTTPS bridge and set TACK_ADMIN_PASSWORD for the browser check");
   const ok = await evaluate(`fetch("/login",{method:"POST",body:new URLSearchParams({password:${JSON.stringify(password)}})}).then(r=>r.ok)`);
   if (!ok) throw new Error("Bridge sign-in failed");

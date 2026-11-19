@@ -68,3 +68,18 @@ for (const [key, name] of Object.entries({esc:"Esc", win:"Super", alttab:"Alt+Ta
   label.append(box, name);
   $("send-keys").append(label);
 }
+
+const passwordForm = $("password-form") as HTMLFormElement;
+passwordForm.onsubmit = async (event) => {
+  event.preventDefault();
+  const body = new URLSearchParams();
+  new FormData(passwordForm).forEach((value, name) => body.set(name, String(value)));
+  const button = passwordForm.querySelector("button")!;
+  button.disabled = true;
+  try {
+    const res = await fetch(passwordForm.action, {method: "POST", body});
+    if (res.ok) { passwordForm.reset(); location.assign("/login"); }
+    else $("password-result").textContent = await res.text();
+  } catch { $("password-result").textContent = "Could not reach the bridge."; }
+  finally { button.disabled = false; }
+};

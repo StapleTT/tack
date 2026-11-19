@@ -64,6 +64,15 @@
     <fieldset id="send-keys"><legend>Show in the Send to host menu</legend></fieldset>
   </div>
 
+  <h2>Admin password</h2>
+  <form id="password-form" class="card" method="post" action="/api/password">
+    <label>Current password <input name="current" type="password" autocomplete="current-password" required></label>
+    <label>New password <input name="new" type="password" autocomplete="new-password" required></label>
+    <label>Confirm new password <input name="confirm" type="password" autocomplete="new-password" required></label>
+    <button>Change password and sign out</button>
+    <output id="password-result" aria-live="polite"></output>
+  </form>
+
   <h2>First time on this device</h2>
   <div class="card">
     <p style="margin-top:0">Pointer lock, keyboard capture and clipboard need HTTPS. Import the tack certificate authority once per device:</p>

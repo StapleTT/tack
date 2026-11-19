@@ -48,14 +48,10 @@ func serve(ctx context.Context, dataDir, listen string, udpPort int, app string)
 	}
 
 	passwordPath := filepath.Join(dataDir, "admin-password")
-	password, err := loadOrCreateToken(passwordPath)
+	password, err := loadPassword(passwordPath)
 	if err != nil {
 		return err
 	}
-	if password == "" {
-		return errors.New("empty admin-password")
-	}
-	log.Printf("LAN admin password file: %s", passwordPath)
 	var hostMu sync.RWMutex
 	var savedHost nvhttp.Client
 	if host != nil {
@@ -163,7 +159,7 @@ func serve(ctx context.Context, dataDir, listen string, udpPort int, app string)
 
 	srv := &http.Server{
 		Addr:              listen,
-		Handler:           adminAccess(mux, password),
+		Handler:           adminAccess(mux, passwordPath, password),
 		TLSConfig:         &tls.Config{Certificates: []tls.Certificate{cert}},
 		ReadHeaderTimeout: 10 * time.Second,
 	}
