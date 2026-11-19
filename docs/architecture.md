@@ -72,7 +72,9 @@ bridge/internal/moonlight/  cgo wrapper over moonlight-common-c (session, callba
 bridge/internal/session/    one browser PeerConnection tied to one Moonlight session; takeover
 bridge/internal/tlsca/      local CA + per-start server certificate
 web/                        TypeScript stream page (tsc only, no bundler), embedded via web/embed.go
-  src/stream.ts             connection, overlay, menu
+  index.html, src/home.ts   homepage (/)
+  stream.html               stream client (/stream)
+  src/stream.ts             connection, overlay, menu, autoplay/sound
   src/input.ts              mouse modes, keyboard, gamepad, rumble
   src/keymap.ts             KeyboardEvent.code to Windows VK, ChromeOS choices
 bridge/internal/session/input.go   input wire format parser and dispatch

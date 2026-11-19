@@ -2,6 +2,16 @@
 
 This file describes what exists. Planned parts are marked.
 
+## Pages and endpoints
+
+| Route | What |
+|---|---|
+| `GET /` | Homepage: host status, Start streaming, CA download, hotkeys |
+| `GET /stream` | Stream client. Connects on load. Optional `?fps=60&bitrate=20000&res=1280x720` overrides. |
+| `GET /api/status` | `{"host","online","paired","app","streaming","error"}` for the homepage |
+| `GET /ca.pem` | Local CA certificate |
+| `POST /api/session` | Start a session (below) |
+
 ## Browser to bridge: session start (HTTPS)
 
 There is no signaling WebSocket. ICE is non-trickle and the bridge has fixed host candidates, so one request/response is enough.
@@ -19,8 +29,6 @@ There is no signaling WebSocket. ICE is non-trickle and the bridge has fixed hos
 - The browser adds `stereo=1` to its Opus fmtp so Chrome keeps stereo.
 
 Response `200 {"sdp": "<answer>"}`, sent once the Moonlight session is up. Errors return a non-200 status with a plain-text reason (host offline, not paired, no H.264).
-
-`GET /ca.pem` returns the local CA certificate for import.
 
 ## Media
 

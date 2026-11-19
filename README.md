@@ -34,8 +34,8 @@ make test
 
 ```
 ./build/tack-bridge pair -host <sunshine-ip>    # enter the PIN at https://localhost:47990/pin on the host
-./build/tack-bridge serve                       # https://<bridge-ip>:8443, media on udp/8189
-node web/check.mjs https://localhost:8443/ 8    # headless Firefox end-to-end check (add --mouse on the host)
+./build/tack-bridge serve                       # homepage at https://<bridge-ip>:8443/, stream at /stream
+node web/check.mjs https://localhost:8443/stream 8   # headless Firefox end-to-end check (add --mouse on the host)
 ```
 
 First visit per laptop: download the CA from the page link (`/ca.pem`) and import it as a trusted authority. On ChromeOS: Settings > Privacy and security > Security > Manage certificates > Authorities. On Windows: certmgr, Trusted Root Certification Authorities. Firefox needs its own import: Settings > Privacy & Security > Certificates.

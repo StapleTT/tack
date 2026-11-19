@@ -5,13 +5,13 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
-	"io/fs"
 	"log"
 	"net/http"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"tack/bridge/internal/nvhttp"
 	"tack/bridge/internal/session"
 	"tack/bridge/internal/tlsca"
 	"tack/web"
@@ -32,9 +32,20 @@ func serve(ctx context.Context, dataDir, listen string, udpPort int, app string)
 		return err
 	}
 
-	static, _ := fs.Sub(web.Files, ".")
 	mux := http.NewServeMux()
-	mux.Handle("GET /", http.FileServerFS(static))
+	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFileFS(w, r, web.Files, "index.html")
+	})
+	mux.HandleFunc("GET /stream", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFileFS(w, r, web.Files, "stream.html")
+	})
+	mux.Handle("GET /dist/", http.FileServerFS(web.Files))
+	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) {
+		sctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+		defer cancel()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(hostStatus(sctx, host, mgr))
+	})
 	mux.HandleFunc("GET /ca.pem", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/x-pem-file")
 		w.Write(caPEM)
@@ -76,4 +87,37 @@ func serve(ctx context.Context, dataDir, listen string, udpPort int, app string)
 	}
 	mgr.Close()
 	return nil
+}
+
+type status struct {
+	Host      string `json:"host"`
+	Online    bool   `json:"online"`
+	Paired    bool   `json:"paired"`
+	App       string `json:"app"`
+	Streaming bool   `json:"streaming"`
+	Error     string `json:"error,omitempty"`
+}
+
+func hostStatus(ctx context.Context, host *nvhttp.Client, mgr *session.Manager) status {
+	st := status{Host: host.Host, Streaming: mgr.Streaming()}
+	si, err := host.ServerInfo(ctx)
+	if err != nil {
+		st.Error = err.Error()
+		return st
+	}
+	st.Online, st.Paired = true, si.Paired
+	if si.Hostname != "" {
+		st.Host = si.Hostname
+	}
+	if si.CurrentGame != 0 && si.Paired {
+		st.App = "an app"
+		if apps, err := host.AppList(ctx); err == nil {
+			for _, a := range apps {
+				if a.ID == si.CurrentGame {
+					st.App = a.Title
+				}
+			}
+		}
+	}
+	return st
 }

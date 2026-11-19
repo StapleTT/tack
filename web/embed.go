@@ -4,5 +4,5 @@ package web
 
 import "embed"
 
-//go:embed index.html dist
+//go:embed index.html stream.html dist
 var Files embed.FS

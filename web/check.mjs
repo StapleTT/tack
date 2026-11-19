@@ -1,7 +1,7 @@
-// End-to-end check: headless Firefox opens the bridge, clicks Connect, and
+// End-to-end check: headless Firefox opens /stream (which connects on load) and
 // reports WebRTC receive stats after a few seconds of streaming.
 //
-//   node web/check.mjs [url] [seconds] [--mouse]
+//   node web/check.mjs [url] [seconds] [--mouse] [--screenshot=file.png]
 //
 // --mouse also moves the browser pointer and compares the real host cursor
 // (hyprctl cursorpos), so it only works with the bridge talking to this host.
@@ -15,7 +15,8 @@ import { join } from "node:path";
 
 const args = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const mouseTest = process.argv.includes("--mouse");
-const url = args[0] ?? "https://localhost:8443/";
+const shotPath = process.argv.find((a) => a.startsWith("--screenshot="))?.slice(13);
+const url = args[0] ?? "https://localhost:8443/stream";
 const seconds = Number(args[1] ?? 8);
 const port = 9300 + (process.pid % 500); // unique per run so checks can overlap
 
@@ -70,11 +71,10 @@ const evaluate = async (expression) => {
   return r.result.value;
 };
 
-await evaluate(`document.getElementById("connect").click()`);
 await sleep(seconds * 1000);
 
 const report = await evaluate(`(async () => {
-  const out = { message: document.getElementById("message").textContent, overlayHidden: document.getElementById("overlay").hidden };
+  const out = { message: document.getElementById("message")?.textContent, overlayHidden: document.getElementById("overlay")?.hidden };
   if (!window.__tackPc) return JSON.stringify(out);
   (await window.__tackPc.getStats()).forEach((s) => {
     if (s.type === "inbound-rtp") out[s.kind] = {
@@ -89,6 +89,11 @@ const report = await evaluate(`(async () => {
   return JSON.stringify(out);
 })()`);
 const result = JSON.parse(report);
+
+if (shotPath) {
+  const { data } = await send("browsingContext.captureScreenshot", { context });
+  writeFileSync(shotPath, Buffer.from(data, "base64"));
+}
 
 if (mouseTest) {
   // Host monitor size, then for a few viewport points: move the browser

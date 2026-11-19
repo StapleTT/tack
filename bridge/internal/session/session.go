@@ -357,6 +357,13 @@ func (s *Session) sendControl(v any) {
 	_ = dc.SendText(string(b))
 }
 
+// Streaming reports whether a browser currently owns the stream.
+func (m *Manager) Streaming() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.cur != nil
+}
+
 // Close ends the current session, restoring the host cursor.
 func (m *Manager) Close() {
 	m.mu.Lock()

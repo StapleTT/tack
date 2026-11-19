@@ -5,46 +5,65 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>tack</title>
 <style>
-  html, body { margin: 0; height: 100%; background: #000; color: #eee; font: 16px system-ui, sans-serif; overflow: hidden; }
-  video { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; }
-  #overlay { position: fixed; inset: 0; display: flex; flex-direction: column; gap: 1rem; align-items: center; justify-content: center; background: rgba(0,0,0,.75); }
-  #overlay[hidden] { display: none; }
-  button { font: inherit; padding: .75rem 2rem; border: 0; border-radius: .5rem; background: #3a7afe; color: #fff; cursor: pointer; }
-  button:disabled { opacity: .5; cursor: default; }
-  #stats { position: fixed; top: .5rem; left: .5rem; font: 12px ui-monospace, monospace; background: rgba(0,0,0,.6); padding: .25rem .5rem; white-space: pre; pointer-events: none; }
+  :root { color-scheme: dark; }
+  body { margin: 0; min-height: 100vh; background: #0e0f12; color: #e8e8ea; font: 16px/1.5 system-ui, sans-serif; display: flex; justify-content: center; }
+  main { width: min(36rem, 100% - 2rem); padding: 3rem 0; }
+  h1 { font-size: 1.75rem; margin: 0 0 1.5rem; letter-spacing: .02em; }
+  h2 { font-size: 1rem; margin: 2rem 0 .5rem; color: #aab; font-weight: 600; }
+  .card { background: #181a20; border-radius: .75rem; padding: 1.25rem; }
+  .host { display: flex; align-items: center; gap: .75rem; }
+  .dot { width: .75rem; height: .75rem; border-radius: 50%; background: #666; flex: none; }
+  .dot.ok { background: #3ecf72; } .dot.bad { background: #e5484d; }
+  #host-name { font-weight: 600; }
+  #host-detail, .muted { color: #9a9aa5; font-size: .9rem; }
+  #notice { margin: 1rem 0 0; color: #f0b429; font-size: .9rem; }
+  #notice:empty { display: none; }
+  .start { display: block; margin-top: 1.25rem; padding: .9rem; text-align: center; background: #3a7afe; color: #fff; border-radius: .5rem; text-decoration: none; font-weight: 600; font-size: 1.1rem; }
+  .start[aria-disabled="true"] { background: #2a2d36; color: #777; pointer-events: none; }
+  .start:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
   a { color: #8ab4ff; }
-  #banner { position: fixed; top: 1rem; left: 50%; transform: translateX(-50%); background: rgba(20,20,20,.85); padding: .5rem 1rem; border-radius: .5rem; pointer-events: none; }
-  #menu { position: fixed; top: 1rem; right: 1rem; width: 18rem; background: rgba(20,20,20,.95); border-radius: .5rem; padding: 1rem; display: grid; gap: .5rem; }
-  #menu[hidden], #banner[hidden] { display: none; }
-  #menu button { padding: .4rem .75rem; background: #333; text-align: left; }
-  #menu h2 { font-size: .8rem; margin: .5rem 0 0; color: #aaa; font-weight: normal; }
-  kbd { font: 12px ui-monospace, monospace; background: #333; padding: 0 .3rem; border-radius: .2rem; }
+  ul { margin: .25rem 0; padding-left: 1.25rem; }
+  kbd { font: 13px ui-monospace, monospace; background: #2a2d36; padding: .05rem .35rem; border-radius: .25rem; }
+  table { border-collapse: collapse; } td { padding: .15rem 1rem .15rem 0; }
 </style>
 </head>
 <body>
-<video id="video" autoplay playsinline></video>
-<div id="stats" hidden></div>
-<div id="banner" hidden>Click or press a key to capture the mouse</div>
-<div id="menu" hidden>
-  <small>Menu: <kbd>Ctrl+Alt+Shift+H</kbd></small>
-  <button data-act="fullscreen">Fullscreen <kbd>Ctrl+Alt+Shift+F</kbd></button>
-  <button data-act="mode">Mouse: <span id="mode">absolute</span> <kbd>Ctrl+Alt+Shift+M</kbd></button>
-  <button data-act="stats">Stats <kbd>Ctrl+Alt+Shift+S</kbd></button>
-  <h2>Send to host</h2>
-  <button data-act="esc">Esc</button>
-  <button data-act="win">Super (Win)</button>
-  <button data-act="alttab">Alt+Tab</button>
-  <button data-act="altf4">Alt+F4</button>
-  <button data-act="cad">Ctrl+Alt+Del</button>
-  <h2>Fixes</h2>
-  <button data-act="cursor">Toggle host cursor (two cursors or none)</button>
-  <button data-act="disconnect">Disconnect</button>
-</div>
-<div id="overlay">
-  <p id="message" role="status">Ready</p>
-  <button id="connect">Connect</button>
-  <small><a href="/ca.pem" download="tack-ca.pem">Download the tack CA certificate</a></small>
-</div>
-<script type="module" src="/dist/stream.js"></script>
+<main>
+  <h1>tack</h1>
+
+  <section class="card" aria-live="polite">
+    <div class="host">
+      <span class="dot" id="dot"></span>
+      <div>
+        <div id="host-name">Checking host…</div>
+        <div id="host-detail"></div>
+      </div>
+    </div>
+    <p id="notice"></p>
+    <a class="start" id="start" href="/stream" aria-disabled="true">Start streaming</a>
+  </section>
+
+  <h2>First time on this device</h2>
+  <div class="card">
+    <p style="margin-top:0">Pointer lock, keyboard capture and clipboard need HTTPS. Import the tack certificate authority once per device:</p>
+    <p><a href="/ca.pem" download="tack-ca.pem">Download tack-ca.pem</a></p>
+    <ul class="muted">
+      <li>ChromeOS: Settings › Privacy and security › Security › Manage certificates › Authorities › Import, and trust it for websites.</li>
+      <li>Windows (Chrome/Edge): open the file › Install Certificate › Local Machine › Trusted Root Certification Authorities.</li>
+      <li>Firefox: Settings › Privacy &amp; Security › Certificates › View Certificates › Authorities › Import.</li>
+    </ul>
+  </div>
+
+  <h2>While streaming</h2>
+  <div class="card">
+    <table>
+      <tr><td><kbd>Ctrl+Alt+Shift+H</kbd></td><td>Menu (send keys, fixes, disconnect)</td></tr>
+      <tr><td><kbd>Ctrl+Alt+Shift+F</kbd></td><td>Fullscreen, captures all keys on Chrome</td></tr>
+      <tr><td><kbd>Ctrl+Alt+Shift+M</kbd></td><td>Mouse mode: desktop or game (pointer lock)</td></tr>
+      <tr><td><kbd>Ctrl+Alt+Shift+S</kbd></td><td>Stats</td></tr>
+    </table>
+  </div>
+</main>
+<script type="module" src="/dist/home.js"></script>
 </body>
 </html>

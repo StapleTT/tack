@@ -12,6 +12,11 @@ const connectBtn = $<HTMLButtonElement>("connect");
 const statsEl = $<HTMLDivElement>("stats");
 const banner = $<HTMLDivElement>("banner");
 const menu = $<HTMLDivElement>("menu");
+const soundBtn = $<HTMLButtonElement>("sound");
+
+// Optional overrides: /stream?fps=60&bitrate=20000&res=1280x720
+const params = new URLSearchParams(location.search);
+const [resW, resH] = (params.get("res") ?? "").split("x").map(Number);
 
 let pc: RTCPeerConnection | null = null;
 let input: Input | null = null;
@@ -22,6 +27,7 @@ function show(text: string, button = "Connect") {
   message.textContent = text;
   connectBtn.textContent = button;
   connectBtn.disabled = false;
+  connectBtn.hidden = false;
   overlay.hidden = false;
 }
 
@@ -33,7 +39,26 @@ function stop() {
   pc = null;
   menu.hidden = true;
   statsEl.hidden = true;
+  soundBtn.hidden = true;
 }
+
+// Autoplay with sound needs a user gesture on this page. Without one, start
+// muted and offer a button (clicking the video itself would click the host).
+function play() {
+  video.muted = false;
+  video.play().catch(() => {
+    video.muted = true;
+    video.play().catch(() => {});
+    soundBtn.hidden = false;
+  });
+}
+function unmute() {
+  if (!video.muted) return;
+  video.muted = false;
+  soundBtn.hidden = true;
+}
+soundBtn.addEventListener("click", unmute);
+window.addEventListener("keydown", unmute, { capture: true });
 
 const ui = {
   armed: (on: boolean) => { banner.hidden = !on || !menu.hidden; },
@@ -119,6 +144,7 @@ async function connect() {
   conn.ontrack = (e) => {
     lowLatency(e.receiver);
     stream.addTrack(e.track);
+    if (e.track.kind === "audio") play();
   };
 
   control.onmessage = (e) => {
@@ -145,9 +171,10 @@ async function connect() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       sdp: conn.localDescription?.sdp,
-      width: Math.round(screen.width * dpr),
-      height: Math.round(screen.height * dpr),
-      fps: 60,
+      width: resW || Math.round(screen.width * dpr),
+      height: resH || Math.round(screen.height * dpr),
+      fps: Number(params.get("fps")) || 60,
+      bitrate_kbps: Number(params.get("bitrate")) || 0,
     }),
   });
   if (!res.ok) {
@@ -181,4 +208,6 @@ async function updateStats(conn: RTCPeerConnection) {
   statsEl.hidden = !showStats;
 }
 
-connectBtn.addEventListener("click", () => { connect().catch((err) => { stop(); show(`Error: ${err}`, "Retry"); }); });
+const start = () => { connect().catch((err) => { stop(); show(`Error: ${err}`, "Retry"); }); };
+connectBtn.addEventListener("click", start);
+start(); // the click that opened this page is the "one click"
