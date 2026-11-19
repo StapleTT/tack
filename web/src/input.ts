@@ -66,6 +66,11 @@ export class Input {
     this.on(document, "pointerlockchange", () => {
       // Pointer lock hides the browser's cursor, so let the host's show in
       // the video instead; hide it again whenever the browser draws one.
+      if (this.locked() && this.ui.menuOpen()) {
+        // A pending lock request can finish after the menu opens.
+        document.exitPointerLock();
+        return;
+      }
       this.send(new Uint8Array([T.hostCursor, this.locked() ? 1 : 0]));
       this.ui.armed(this.mode === "relative" && !this.locked());
     });
@@ -276,7 +281,8 @@ export class Input {
     e.preventDefault();
     e.stopPropagation();
     if (down) {
-      if (this.mode === "relative" && !this.locked()) this.requestLock();
+      // Let the user finish a menu shortcut before a modifier can capture the pointer.
+      if (this.mode === "relative" && !this.locked() && !/^(Control|Alt|Shift|Meta)(Left|Right)$/.test(e.code)) this.requestLock();
       if (e.repeat) return; // the host does its own key repeat
       this.flushClipboard();
       this.keys.add(vk);

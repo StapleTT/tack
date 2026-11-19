@@ -125,7 +125,10 @@ function act(name: string) {
       menu.hidden = !menu.hidden;
       if (!menu.hidden && document.pointerLockElement) document.exitPointerLock();
       ui.armed(input?.mode === "relative" && !document.pointerLockElement);
-      if (!menu.hidden) hint.hidden = true;
+      if (!menu.hidden) {
+        hostCursor.cancel();
+        hint.hidden = true;
+      }
       return;
     case "fullscreen": return toggleFullscreen();
     case "stats":
@@ -140,7 +143,7 @@ function act(name: string) {
     case "alttab": return input?.sendCombo([VK.LAlt, VK.Tab]);
     case "altf4": return input?.sendCombo([VK.LAlt, VK.F4]);
     case "cad": return input?.sendCombo([VK.LControl, VK.LAlt, VK.Delete]);
-    case "cursor": return input?.toggleHostCursor();
+    case "cursor": hostCursor.cancel(); return input?.toggleHostCursor();
     case "paste": {
       const b = $("paste-btn");
       void input?.uploadClipboard().then((sent) => {
