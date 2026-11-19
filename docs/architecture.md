@@ -80,8 +80,10 @@ web/                        TypeScript stream page (tsc only, no bundler), embed
 bridge/internal/session/input.go   input wire format parser and dispatch
 web/check.mjs               headless Firefox end-to-end check (WebDriver BiDi, no deps)
 third_party/moonlight-common-c/  git submodule, built static into build/mcc by `make mcc`
-agent/                      host agent (not started)
-deploy/                     systemd units, CA scripts (not started)
+agent/                      host agent: Hyprland focus (hyprland.go), wl-clipboard (clipboard.go), bridge link (main.go)
+internal/agentproto/        JSON messages shared by agent and bridge
+bridge/internal/session/agent.go  agent link, clipboard chunking and routing
+deploy/tack-agent.service   systemd user unit for the agent
 spikes/out/                 spike captures (gitignored)
 ```
 

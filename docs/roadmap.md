@@ -14,6 +14,7 @@ Order puts make-or-break unknowns first.
    Status: built. Absolute mouse verified end to end in headless Firefox: the browser pointer lands within 1 px on the host (`node web/check.mjs --mouse`). Host cursor hide/restore verified. Not yet exercised on real hardware: keyboard, buttons, wheel, pointer lock, gamepad, rumble, Keyboard Lock, ChromeOS keys.
 4. **Host agent**: clipboard sync and Hyprland-based mouse-mode signal, manual toggle.
    Exit: focusing a listed game window arms pointer lock; copy/paste works both ways.
+   Status: built. Verified with headless Firefox and the real agent on the host: mode rule reaches the browser (armed banner); 20 004 characters with emoji round-trip browser to host through 3 chunks; host copy reaches the page (`node web/check.mjs --clipboard`). Not yet exercised on real hardware: the held-paste keystroke, browser clipboard permission prompts (Chrome) and Firefox's paste popup, a real game window.
 5. **Admin panel**: login, saved host, PIN pairing, per-client presets, takeover and grace logic, stats overlay (RTT, loss, decode time, dropped frames).
 6. **Hardening**: systemd units, reconnect testing (wifi blip, refresh, lid close), Firefox and ChromeOS checks.
 

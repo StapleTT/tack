@@ -24,7 +24,16 @@ export interface InputUI {
   modeChanged(mode: MouseMode): void;
   hotkey(key: "menu" | "fullscreen" | "stats" | "mode"): void;
   menuOpen(): boolean;
+  sendControl(msg: object): void;
 }
+
+const CLIP_MAX = 1 << 20; // bytes, same cap as bridge and agent
+const CLIP_CHUNK = 8192; // UTF-16 units per control message (fits pion's 64 KiB limit)
+
+interface PendingPaste { vk: number; mods: number; up: boolean; finish: () => void }
+
+const isPaste = (e: KeyboardEvent) =>
+  (e.code === "KeyV" && e.ctrlKey && !e.altKey && !e.metaKey) || (e.code === "Insert" && e.shiftKey && !e.ctrlKey);
 
 export class Input {
   mode: MouseMode = "absolute";
@@ -35,6 +44,11 @@ export class Input {
   private padTimer = 0;
   private remX = 0; private remY = 0; private remWheelY = 0; private remWheelX = 0;
   private off: (() => void)[] = [];
+  private lastClip = ""; // text both sides already have
+  private pendingWrite: string | null = null; // host text the browser would not accept yet
+  private incoming = ""; // host clipboard chunks
+  private pasteId = 0;
+  private pastes = new Map<number, PendingPaste>();
 
   constructor(private dc: RTCDataChannel, private video: HTMLVideoElement, private ui: InputUI) {
     const moveEvent = "onpointerrawupdate" in window ? "pointerrawupdate" : "pointermove";
@@ -80,6 +94,68 @@ export class Input {
       vk === VK.LShift ? MOD.shift : vk === VK.LControl ? MOD.ctrl : vk === VK.LAlt ? MOD.alt : vk === VK.LWin ? MOD.meta : 0;
     for (const vk of vks) { mods |= modOf(vk); this.sendKey(vk, true, mods); }
     for (const vk of [...vks].reverse()) { mods &= ~modOf(vk); this.sendKey(vk, false, mods); }
+  }
+
+  // Clipboard messages from the bridge (host copied something, or the host
+  // now holds the text for a held paste keystroke).
+  onControl(msg: { type: string; text?: string; more?: boolean; id?: number }) {
+    if (msg.type === "clipboard") {
+      this.incoming += msg.text ?? "";
+      if (msg.more) return;
+      const text = this.incoming;
+      this.incoming = "";
+      this.lastClip = text;
+      this.writeClipboard(text);
+    } else if (msg.type === "clipboard-ack" && msg.id) {
+      this.pastes.get(msg.id)?.finish();
+    }
+  }
+
+  // Send the local clipboard to the host unless it already has it. Resolves
+  // false when nothing was sent (no permission, empty, unchanged, too big).
+  async uploadClipboard(id = 0): Promise<boolean> {
+    let text: string;
+    try { text = await navigator.clipboard.readText(); } catch { return false; }
+    if (!text || text === this.lastClip || new TextEncoder().encode(text).length > CLIP_MAX) return false;
+    this.lastClip = text;
+    for (let i = 0; i < text.length;) {
+      let end = Math.min(i + CLIP_CHUNK, text.length);
+      const c = text.charCodeAt(end - 1);
+      if (end < text.length && c >= 0xd800 && c <= 0xdbff) end--; // keep surrogate pairs whole
+      this.ui.sendControl({ type: "clipboard", text: text.slice(i, end), more: end < text.length, id });
+      i = end;
+    }
+    return true;
+  }
+
+  private writeClipboard(text: string) {
+    // Browsers may refuse without a recent user gesture; retry on the next one.
+    navigator.clipboard.writeText(text).then(() => { this.pendingWrite = null; }, () => { this.pendingWrite = text; });
+  }
+
+  private flushClipboard() {
+    if (this.pendingWrite !== null) this.writeClipboard(this.pendingWrite);
+  }
+
+  // Hold the paste key until the host clipboard has our text, so the host
+  // pastes the new content rather than the old.
+  private paste(vk: number, mods: number) {
+    const id = ++this.pasteId;
+    let done = false;
+    const p: PendingPaste = {
+      vk, mods, up: false,
+      finish: () => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        this.pastes.delete(id);
+        this.sendKey(vk, true, mods);
+        if (p.up) { this.keys.delete(vk); this.sendKey(vk, false, mods); }
+      },
+    };
+    this.pastes.set(id, p);
+    const timer = setTimeout(p.finish, 2000);
+    this.uploadClipboard(id).then((sent) => { if (!sent) p.finish(); });
   }
 
   playRumble(slot: number, low: number, high: number) {
@@ -153,6 +229,7 @@ export class Input {
     if (!button) return;
     if (down) {
       if (this.ui.menuOpen()) return;
+      this.flushClipboard();
       e.preventDefault(); // no middle-click autoscroll, no text selection
       if (this.mode === "relative" && !this.locked()) { this.requestLock(); return; }
       this.buttons.add(button);
@@ -196,7 +273,9 @@ export class Input {
     if (down) {
       if (this.mode === "relative" && !this.locked()) this.requestLock();
       if (e.repeat) return; // the host does its own key repeat
+      this.flushClipboard();
       this.keys.add(vk);
+      if (isPaste(e)) { this.paste(vk, mods(e)); return; }
       this.sendKey(vk, true, mods(e));
     } else {
       this.releaseKey(e);
@@ -205,11 +284,14 @@ export class Input {
 
   private releaseKey(e: KeyboardEvent) {
     const vk = vkFor(e.code);
+    for (const p of this.pastes.values()) if (p.vk === vk) { p.up = true; return; } // sent with the held paste
     if (vk !== undefined && this.keys.delete(vk)) this.sendKey(vk, false, mods(e));
   }
 
   private releaseAll() {
-    for (const vk of this.keys) this.sendKey(vk, false, 0);
+    const held = new Set<number>();
+    for (const p of this.pastes.values()) { p.up = true; held.add(p.vk); } // released when the paste goes out
+    for (const vk of this.keys) if (!held.has(vk)) this.sendKey(vk, false, 0);
     for (const b of this.buttons) this.sendButton(b, false);
     this.keys.clear();
     this.buttons.clear();

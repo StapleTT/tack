@@ -1,0 +1,19 @@
+# Host agent: clipboard sync and mouse-mode signal from Hyprland.
+# Install on the gaming PC:
+#   install -Dm755 build/tack-agent ~/.local/bin/tack-agent
+#   install -Dm600 <bridge data>/agent-token ~/.config/tack/agent-token
+#   install -Dm644 <bridge data>/tls/ca.pem  ~/.config/tack/ca.pem
+#   install -Dm644 deploy/tack-agent.service ~/.config/systemd/user/tack-agent.service
+#   edit -bridge below, then: systemctl --user enable --now tack-agent
+[Unit]
+Description=tack host agent
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=%h/.local/bin/tack-agent -bridge https://BRIDGE-IP:8443
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=graphical-session.target

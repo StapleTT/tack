@@ -20,6 +20,9 @@ const [resW, resH] = (params.get("res") ?? "").split("x").map(Number);
 
 let pc: RTCPeerConnection | null = null;
 let input: Input | null = null;
+let control: RTCDataChannel | null = null;
+// Handles for web/check.mjs.
+const debug: Record<string, unknown> = ((window as unknown as { __tack: object }).__tack = {});
 let statsTimer = 0;
 let showStats = false;
 
@@ -65,6 +68,7 @@ const ui = {
   modeChanged: (mode: MouseMode) => { $("mode").textContent = mode; },
   menuOpen: () => !menu.hidden,
   hotkey: (key: "menu" | "fullscreen" | "stats" | "mode") => act(key),
+  sendControl: (msg: object) => { if (control?.readyState === "open") control.send(JSON.stringify(msg)); },
 };
 
 function act(name: string) {
@@ -83,6 +87,7 @@ function act(name: string) {
     case "altf4": return input?.sendCombo([VK.LAlt, VK.F4]);
     case "cad": return input?.sendCombo([VK.LControl, VK.LAlt, VK.Delete]);
     case "cursor": return input?.toggleHostCursor();
+    case "paste": input?.uploadClipboard(); return;
     case "disconnect": stop(); show("Disconnected.", "Connect"); return;
   }
 }
@@ -130,15 +135,15 @@ async function connect() {
 
   const conn = new RTCPeerConnection();
   pc = conn;
-  (window as unknown as { __tackPc: RTCPeerConnection }).__tackPc = conn; // for web/check.mjs
   conn.addTransceiver("video", { direction: "recvonly" });
   conn.addTransceiver("audio", { direction: "recvonly" });
-  const control = conn.createDataChannel("control");
+  const ctl = conn.createDataChannel("control");
+  control = ctl;
   // Reliable and ordered: a lost key-up or button-up would leave it stuck.
   const inputDc = conn.createDataChannel("input");
   inputDc.binaryType = "arraybuffer";
-  (window as unknown as { __tackInputDc: RTCDataChannel }).__tackInputDc = inputDc; // for web/check.mjs
-  inputDc.onopen = () => { if (conn === pc) input = new Input(inputDc, video, ui); };
+  inputDc.onopen = () => { if (conn === pc) debug.input = input = new Input(inputDc, video, ui); };
+  Object.assign(debug, { pc: conn, inputDc, control: ctl });
 
   const stream = new MediaStream();
   video.srcObject = stream;
@@ -148,12 +153,13 @@ async function connect() {
     if (e.track.kind === "audio") play();
   };
 
-  control.onmessage = (e) => {
+  ctl.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     if (msg.type === "kicked") { stop(); show("Taken over by another device.", "Take back"); }
     else if (msg.type === "ended") { stop(); show(`Stream ended: ${msg.reason}`, "Reconnect"); }
     else if (msg.type === "mode") input?.setMode(msg.mode);
     else if (msg.type === "rumble") input?.playRumble(msg.pad, msg.low, msg.high);
+    else if (msg.type === "clipboard" || msg.type === "clipboard-ack") input?.onControl(msg);
   };
 
   conn.onconnectionstatechange = () => {

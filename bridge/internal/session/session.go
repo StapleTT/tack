@@ -11,6 +11,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pion/ice/v4"
@@ -20,6 +21,7 @@ import (
 
 	"tack/bridge/internal/moonlight"
 	"tack/bridge/internal/nvhttp"
+	"tack/internal/agentproto"
 )
 
 // Request is what the browser POSTs to start streaming.
@@ -39,6 +41,16 @@ type Manager struct {
 	mu     sync.Mutex
 	cur    *Session
 	lastID int
+	// live mirrors cur for readers that must not wait on mu (Start holds it
+	// for the whole host launch).
+	live atomic.Pointer[Session]
+
+	agentMu    sync.Mutex
+	agentID    int
+	agentSend  func(agentproto.Message) error
+	agentClose func()
+	agentMode  string // last mode the agent reported
+
 	// cursorHidden tracks Sunshine's global draw-cursor flag, which only
 	// flips via a toggle shortcut. Hidden while the browser draws its own
 	// cursor, shown while the pointer is locked; hidden across takeovers.
@@ -52,6 +64,9 @@ type Session struct {
 	mu      sync.Mutex
 	control *webrtc.DataChannel
 	ended   bool
+
+	clip       strings.Builder // browser clipboard chunks being reassembled
+	clipTooBig bool
 
 	// live gates input: only the current session may send to Moonlight, and
 	// never while it is being stopped.
@@ -147,6 +162,12 @@ func (m *Manager) Start(ctx context.Context, req Request) (string, error) {
 			s.mu.Lock()
 			s.control = dc
 			s.mu.Unlock()
+			dc.OnOpen(func() {
+				if mode := m.mode(); mode != "" {
+					s.sendControl(map[string]string{"type": "mode", "mode": mode})
+				}
+			})
+			dc.OnMessage(func(msg webrtc.DataChannelMessage) { m.handleControl(s, msg) })
 		case "input":
 			dc.OnMessage(func(msg webrtc.DataChannelMessage) { m.handleInput(s, msg) })
 		}
@@ -200,6 +221,7 @@ func (m *Manager) Start(ctx context.Context, req Request) (string, error) {
 		return fail(err)
 	}
 	m.cur = s
+	m.live.Store(s)
 	return pc.LocalDescription().SDP, nil
 }
 
@@ -412,6 +434,7 @@ func (m *Manager) endLocked(s *Session, reason string) {
 		}
 		moonlight.Stop()
 		m.cur = nil
+		m.live.Store(nil)
 	}
 	if dc != nil && reason != "" {
 		typ := "ended"

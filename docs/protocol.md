@@ -44,10 +44,28 @@ Response `200 {"sdp": "<answer>"}`, sent once the Moonlight session is up. Error
 | `{"type":"kicked"}` | Another device took over. The client shows "Taken over by another device." |
 | `{"type":"ended","reason":"..."}` | The host ended the stream. |
 
-| `{"type":"mode","mode":"absolute"\|"relative"}` | Switch mouse mode. Nothing sends this until the host agent lands (step 4); the client already handles it. |
+| `{"type":"mode","mode":"absolute"\|"relative"}` | Switch mouse mode, from the host agent's focus rule. Also sent when the channel opens if the agent has reported a mode. |
 | `{"type":"rumble","pad":0,"low":0,"high":0}` | Gamepad rumble, 0–65535 per motor. Lasts until the next rumble message for that pad. |
 
-Planned: `clipboard`.
+| `{"type":"clipboard","text":"...","more":bool}` | Host clipboard changed. Arrives in chunks of at most 8192 characters; `more:false` marks the last one. |
+| `{"type":"clipboard-ack","id":n}` | The host clipboard now holds the text for paste `id` (or there is no agent). |
+
+Browser to bridge on the same channel:
+
+| Message | Meaning |
+|---|---|
+| `{"type":"clipboard","text":"...","more":bool,"id":n}` | Local clipboard for the host, chunked the same way (8192 UTF-16 units, surrogate pairs kept whole). The last chunk's `id` is acked. `id` 0 means a menu upload with no held key. |
+
+Chunks keep every data channel message under pion's default 64 KiB limit, even if JSON escaping turns each character into 6 bytes.
+
+### Paste flow
+
+1. You press Ctrl+V, Ctrl+Shift+V or Shift+Insert. The client holds the V/Insert key (modifiers already went through).
+2. The client reads the local clipboard. If it is empty, unchanged since the last sync, over 1 MB, or not readable (no permission), it sends the key right away.
+3. Otherwise it uploads the text. The bridge passes it to the agent, which runs `wl-copy` and acks. The bridge relays the ack.
+4. On the ack, or after 2 s, the client sends the held key (and its release if you already let go).
+
+Host clipboard changes are written into the browser with `navigator.clipboard.writeText`. If the browser refuses without a user gesture, the client retries on your next key press or click.
 
 ## Browser to bridge: `input` data channel
 
@@ -69,15 +87,18 @@ Each message is binary and little-endian. The first byte is the type.
 
 The bridge drops malformed messages, and drops input from any session that is not the current one.
 
-## Host agent to bridge (planned, step 4)
+## Host agent to bridge
 
-The agent connects outbound to `wss://<pi>/agent` with a bearer token.
+The agent connects outbound to `wss://<bridge>/agent` with `Authorization: Bearer <token>`. The token is `data/agent-token` on the bridge (created on first `serve`). It trusts the bridge through `data/tls/ca.pem`. Only one agent at a time: a new connection replaces the old one. Messages are JSON (`internal/agentproto`):
 
-| Direction | Type | Purpose |
+| Direction | Message | Purpose |
 |---|---|---|
-| A → P | `mode` | `absolute` or `relative` |
-| A → P | `clipboard` | Host clipboard text changed (≤ 1 MB) |
-| P → A | `clipboard` | Client pasted; set host clipboard (≤ 1 MB) |
+| A → B | `{"type":"mode","mode":"absolute"\|"relative"}` | Sent on connect and whenever the focused window crosses the rule |
+| A → B | `{"type":"clipboard","text":"..."}` | Host clipboard text changed (≤ 1 MB, valid UTF-8) |
+| B → A | `{"type":"clipboard","text":"...","id":n}` | A browser pasted: set the host clipboard |
+| A → B | `{"type":"clipboard-ack","id":n}` | Host clipboard set (also sent if `wl-copy` failed, so the paste key is never stuck) |
+
+The agent ignores clipboard changes that match the text both sides already have, so its own `wl-copy` never echoes back. When the agent disconnects, the bridge forgets its mode.
 
 ## Session rules
 

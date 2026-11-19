@@ -1,14 +1,14 @@
 // End-to-end check: headless Firefox opens /stream (which connects on load) and
 // reports WebRTC receive stats after a few seconds of streaming.
 //
-//   node web/check.mjs [url] [seconds] [--mouse] [--screenshot=file.png] [--host-cursor=1|0]
+//   node web/check.mjs [url] [seconds] [--mouse] [--screenshot=file.png] [--host-cursor=1|0] [--clipboard]
 //
 // --mouse also moves the browser pointer and compares the real host cursor
 // (hyprctl cursorpos), so it only works with the bridge talking to this host.
 //
 // Needs a running `tack-bridge serve` and Firefox on PATH. Uses WebDriver BiDi
 // over Node's built-in WebSocket, so there are no dependencies.
-import { spawn, execFileSync } from "node:child_process";
+import { spawn, execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -18,6 +18,9 @@ const mouseTest = process.argv.includes("--mouse");
 const shotPath = process.argv.find((a) => a.startsWith("--screenshot="))?.slice(13);
 // --host-cursor=1|0 sends the "pointer locked" message (draw host cursor) before the screenshot.
 const hostCursor = process.argv.find((a) => a.startsWith("--host-cursor="))?.slice(14);
+// --clipboard round-trips text through the host agent (needs tack-agent
+// running). Saves and restores the host clipboard.
+const clipTest = process.argv.includes("--clipboard");
 const url = args[0] ?? "https://localhost:8443/stream";
 const seconds = Number(args[1] ?? 8);
 const port = 9300 + (process.pid % 500); // unique per run so checks can overlap
@@ -77,8 +80,10 @@ await sleep(seconds * 1000);
 
 const report = await evaluate(`(async () => {
   const out = { message: document.getElementById("message")?.textContent, overlayHidden: document.getElementById("overlay")?.hidden };
-  if (!window.__tackPc) return JSON.stringify(out);
-  (await window.__tackPc.getStats()).forEach((s) => {
+  out.mouseMode = document.getElementById("mode")?.textContent;
+  out.armedBanner = document.getElementById("banner") ? !document.getElementById("banner").hidden : undefined;
+  if (!window.__tack?.pc) return JSON.stringify(out);
+  (await window.__tack.pc.getStats()).forEach((s) => {
     if (s.type === "inbound-rtp") out[s.kind] = {
       packetsReceived: s.packetsReceived, packetsLost: s.packetsLost, framesDecoded: s.framesDecoded,
       frameWidth: s.frameWidth, frameHeight: s.frameHeight, framesPerSecond: s.framesPerSecond,
@@ -93,8 +98,37 @@ const report = await evaluate(`(async () => {
 const result = JSON.parse(report);
 
 if (hostCursor !== undefined) {
-  await evaluate(`window.__tackInputDc.send(new Uint8Array([9, ${Number(hostCursor)}]))`);
+  await evaluate(`window.__tack.inputDc.send(new Uint8Array([9, ${Number(hostCursor)}]))`);
   await sleep(500);
+}
+
+if (clipTest) {
+  const saved = spawnSync("wl-paste", ["--no-newline"], { timeout: 2000 }).stdout ?? Buffer.alloc(0);
+  const big = "ab\u{1F600}".repeat(5000) + "-end"; // 20004 UTF-16 units: three chunks, emoji at chunk edges
+  // Browser -> host: the page's own upload + chunking, fed by a stubbed clipboard read.
+  const ack = await evaluate(`(async () => {
+    const big = "ab\\u{1F600}".repeat(5000) + "-end";
+    Object.defineProperty(navigator.clipboard, "readText", { value: async () => big, configurable: true });
+    const acked = new Promise((resolve) => {
+      window.__tack.control.addEventListener("message", (e) => { const m = JSON.parse(e.data); if (m.type === "clipboard-ack" && m.id === 7) resolve(true); });
+      setTimeout(() => resolve(false), 3000);
+    });
+    const sent = await window.__tack.input.uploadClipboard(7);
+    return JSON.stringify({ sent, acked: await acked });
+  })()`);
+  const host = spawnSync("wl-paste", ["--no-newline"], { timeout: 2000 }).stdout?.toString() ?? "";
+  // Host -> browser.
+  const marker = `host-to-browser \u2713 ${Date.now()}`;
+  spawnSync("wl-copy", [marker], { stdio: "ignore" }); // its forked server keeps pipes open
+  await sleep(1000);
+  const got = await evaluate(`window.__tack.input.lastClip`);
+  if (saved.length) spawnSync("wl-copy", [], { input: saved, stdio: ["pipe", "ignore", "ignore"] });
+  else spawnSync("wl-copy", ["--clear"], { stdio: "ignore" });
+  result.clipboard = {
+    browserToHost: { ...JSON.parse(ack), hostMatches: host === big, hostLength: host.length },
+    hostToBrowser: { matches: got === marker },
+  };
+  result.clipboard.ok = result.clipboard.browserToHost.acked && result.clipboard.browserToHost.hostMatches && result.clipboard.hostToBrowser.matches;
 }
 
 if (shotPath) {
@@ -126,4 +160,4 @@ if (mouseTest) {
 }
 
 console.log(JSON.stringify(result, null, 2));
-process.exit(result.mouse?.some((m) => !m.ok) ? 1 : 0);
+process.exit(result.mouse?.some((m) => !m.ok) || result.clipboard?.ok === false ? 1 : 0);

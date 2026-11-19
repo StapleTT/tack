@@ -27,6 +27,10 @@
 - Firefox has no Keyboard Lock, so a "Send to host" menu covers Esc, Super, Alt+Tab, Alt+F4 and Ctrl+Alt+Del. Making the list configurable belongs with the admin panel (step 5).
 - Gamepads: browser "standard" layout mapped to an Xbox pad, stable slots (lowest free, kept until disconnect), up to 4. Polled every 4 ms; state is sent only when it changes. Rumble effects are re-issued every 4 s because browsers cap effect duration.
 - Relative mode uses `pointerrawupdate` where available (Chrome) and asks for `unadjustedMovement` (raw, unaccelerated deltas), falling back if unsupported.
+- Agent link is a WebSocket via `golang.org/x/net/websocket` (already in the module graph through pion), bearer-token auth, newest agent wins.
+- Mode rule is one regexp on the Hyprland window class, default `^(steam_app_\d+|gamescope)$`. Proton games show up as `steam_app_<id>`; the Steam client itself (`steam`) stays absolute. The manual toggle still works and lasts until the next focus change.
+- Paste holds the V/Insert key until the agent confirms the host clipboard is set (2 s fallback), so the host never pastes stale text.
+- Clipboard travels over the existing `control` data channel in 8192-character chunks rather than a separate HTTP endpoint, so it needs no extra auth path.
 - Bridge encrypts audio and input only, not video (`ENCFLG_AUDIO`), to save Pi CPU. Revisit for the internet phase.
 
 ## Open risks

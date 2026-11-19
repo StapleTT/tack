@@ -1,6 +1,10 @@
 package session
 
-import "testing"
+import (
+	"strings"
+	"testing"
+	"unicode/utf8"
+)
 
 func TestParseInput(t *testing.T) {
 	// Gamepad state: slot 1, mask 0b11, A+LB, triggers 10/250, sticks.
@@ -45,5 +49,21 @@ func TestParseInput(t *testing.T) {
 		if _, err := parseInput(b); err == nil {
 			t.Errorf("parseInput(%v) accepted bad input", b)
 		}
+	}
+}
+
+func TestChunkText(t *testing.T) {
+	s := strings.Repeat("a😀", 5) // 10 runes, emoji must not be split
+	got := chunkText(s, 4)
+	if len(got) != 3 || strings.Join(got, "") != s {
+		t.Fatalf("chunkText = %q", got)
+	}
+	for _, c := range got {
+		if !utf8.ValidString(c) {
+			t.Fatalf("chunk %q is not valid UTF-8", c)
+		}
+	}
+	if got := chunkText("", 4); len(got) != 1 || got[0] != "" {
+		t.Fatalf("empty text should be one empty chunk, got %q", got)
 	}
 }
