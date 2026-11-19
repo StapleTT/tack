@@ -10,6 +10,32 @@ Browser (Chrome/Firefox) ──HTTPS + WSS + WebRTC──▶ Pi 5 bridge ──M
                                                         └──WSS (outbound)── host agent (Hyprland session)
 ```
 
+## Docker quick start on Raspberry Pi
+
+On a 64-bit Raspberry Pi with Sunshine running on the gaming PC, check that `sudo docker compose version` works. For a fresh Pi without Docker, follow the [Docker Engine and Compose installation steps](docs/raspberry-pi.md#2a-docker-compose) first.
+
+Run these commands on the Pi as your regular login:
+
+```sh
+git clone --recurse-submodules https://github.com/StapleTT/tack.git ~/tack
+cd ~/tack
+printf 'TACK_UID=%s\nTACK_GID=%s\n' "$(id -u)" "$(id -g)" > .env
+install -d -m 700 data
+sudo docker compose build bridge
+
+# First install only. The prompt reads your chosen admin password.
+sudo -v
+systemd-ask-password "Initial tack admin password" | sudo docker compose run --rm -T --no-deps bridge passwd
+
+sudo docker compose up -d
+sudo docker compose ps
+curl --fail --cacert data/tls/ca.pem https://localhost:8443/login -o /dev/null
+```
+
+On the laptop, import the Pi’s public `data/tls/ca.pem` as a trusted authority, then open `https://<pi-lan-ip>:8443/` and sign in. Under **Host**, enter the gaming PC’s LAN IP and choose **Start pairing**. Enter the displayed PIN in Sunshine on the gaming PC, then start the stream from the laptop. [Certificate and pairing walkthrough](docs/raspberry-pi.md#3-trust-the-bridge-pair-sunshine-and-start-streaming)
+
+Compose uses the Pi’s host network. Allow TCP **8443** and UDP **8189** on the LAN. Pairing, credentials, and certificates persist in `~/tack/data`. To inspect startup failures, run `sudo docker compose logs --tail=40 bridge`.
+
 ## Docs
 
 Start with the [fresh Raspberry Pi installation guide](docs/raspberry-pi.md) for Docker Compose or a native systemd service.
