@@ -4,97 +4,222 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>tack</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root { color-scheme: dark; }
-  body { margin: 0; min-height: 100vh; background: #0e0f12; color: #e8e8ea; font: 16px/1.5 system-ui, sans-serif; display: flex; justify-content: center; }
-  main { width: min(36rem, 100% - 2rem); padding: 3rem 0; }
-  h1 { font-size: 1.75rem; margin: 0 0 1.5rem; letter-spacing: .02em; }
-  h2 { font-size: 1rem; margin: 2rem 0 .5rem; color: #aab; font-weight: 600; }
-  .card { background: #181a20; border-radius: .75rem; padding: 1.25rem; }
-  .host { display: flex; align-items: center; gap: .75rem; }
-  .dot { width: .75rem; height: .75rem; border-radius: 50%; background: #666; flex: none; }
-  .dot.ok { background: #3ecf72; } .dot.bad { background: #e5484d; }
-  #host-name { font-weight: 600; }
-  #host-detail, .muted { color: #9a9aa5; font-size: .9rem; }
-  #notice { margin: 1rem 0 0; color: #f0b429; font-size: .9rem; }
-  #notice:empty { display: none; }
-  .start { display: block; margin-top: 1.25rem; padding: .9rem; text-align: center; background: #3a7afe; color: #fff; border-radius: .5rem; text-decoration: none; font-weight: 600; font-size: 1.1rem; }
-  .start[aria-disabled="true"] { background: #2a2d36; color: #777; pointer-events: none; }
-  .start:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
-  header { display:flex; align-items:baseline; justify-content:space-between }
-  input,select,button { font:inherit; border:1px solid #505563; border-radius:.4rem; background:#242832; color:inherit; padding:.45rem .65rem }
-  button { cursor:pointer }
-  fieldset { border:0; padding:0; margin:.8rem 0 0 }
-  label { display:inline-block; margin:.25rem .5rem .25rem 0 }
-  output { display:block; margin-top:.5rem }
-  a { color: #8ab4ff; }
-  ul { margin: .25rem 0; padding-left: 1.25rem; }
-  kbd { font: 13px ui-monospace, monospace; background: #2a2d36; padding: .05rem .35rem; border-radius: .25rem; }
-  table { border-collapse: collapse; } td { padding: .15rem 1rem .15rem 0; }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: #0e0e0e; color: #e6e6e6; font: 14px "JetBrains Mono", ui-monospace, Menlo, monospace; -webkit-font-smoothing: antialiased; }
+  a { color: #e6e6e6; } a:hover { color: #fff; }
+  button, input { font: inherit; color: inherit; border-radius: 0; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 2px solid #e6e6e6; outline-offset: 2px; }
+  .app { min-height: 100vh; display: grid; grid-template-columns: 220px minmax(0, 1fr); }
+  aside { border-right: 1px solid #1f1f1f; padding: 24px 16px; display: flex; flex-direction: column; gap: 28px; }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 0 8px; font-size: 15px; font-weight: 500; }
+  .brand i, .dot { flex: none; }
+  .brand i { width: 10px; height: 10px; background: #e6e6e6; }
+  nav { display: flex; flex-direction: column; gap: 2px; }
+  nav a { height: 38px; padding: 0 10px; display: flex; align-items: center; color: #8f8f8f; text-decoration: none; white-space: pre; }
+  nav a:hover { color: #e6e6e6; }
+  nav a[aria-current="page"] { background: #1f1f1f; color: #e6e6e6; }
+  .foot { margin-top: auto; display: flex; flex-direction: column; gap: 10px; padding: 0 10px; font-size: 12px; color: #6a6a6a; }
+  .foot form { display: flex; justify-content: space-between; margin: 0; }
+  .link { border: 0; background: none; padding: 0; color: #8f8f8f; font-size: 12px; } .link:hover { color: #e6e6e6; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #4a4a4a; }
+  .dot.ok { background: #e6e6e6; } .dot.small { width: 6px; height: 6px; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  main { padding: 40px clamp(20px, 4vw, 56px); max-width: 860px; width: 100%; }
+  section { display: flex; flex-direction: column; gap: 32px; }
+  h1 { font-size: 22px; font-weight: 500; margin: 0 0 6px; }
+  h2 { font-size: 17px; font-weight: 500; margin: 8px 0 6px; }
+  .sub { font-size: 14px; color: #8f8f8f; margin: 0; }
+  .note { font-size: 12px; color: #6a6a6a; line-height: 1.6; margin: 0; }
+  .muted { color: #8f8f8f; }
+  .card { background: #141414; border: 1px solid #262626; }
+  .pad { padding: 24px; }
+  .primary { height: 42px; padding: 0 18px; border: 0; background: #e6e6e6; color: #0e0e0e; font-size: 14px; font-weight: 500; text-decoration: none; display: inline-flex; align-items: center; }
+  .primary:hover { background: #fff; color: #0e0e0e; }
+  .primary.big { height: 46px; padding: 0 28px; font-size: 15px; }
+  .primary[aria-disabled="true"], .primary:disabled { background: #262626; color: #6a6a6a; pointer-events: none; }
+  .ghost { height: 42px; padding: 0 16px; border: 1px solid #3a3a3a; background: transparent; color: #c4c4c4; font-size: 13px; }
+  .ghost:hover { background: #1f1f1f; }
+  .empty { border: 1px dashed #3a3a3a; padding: 40px; display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
+  .empty p { max-width: 440px; line-height: 1.5; color: #8f8f8f; margin: 0; }
+  .host-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+  #host-name { font-size: 20px; font-weight: 500; }
+  #host-detail { font-size: 13px; color: #8f8f8f; margin-top: 6px; }
+  .badge { font-size: 12px; color: #8f8f8f; padding: 6px 10px; background: #1f1f1f; }
+  .host-foot { border-top: 1px solid #262626; padding: 18px 24px; display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+  #preset-line { font-size: 13px; color: #8f8f8f; font-variant-numeric: tabular-nums; }
+  label.field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: #8f8f8f; }
+  label.field input { height: 44px; padding: 0 14px; border: 1px solid #2e2e2e; background: #141414; font-size: 15px; outline: none; }
+  label.field input:focus { border-color: #e6e6e6; }
+  .stack { display: flex; flex-direction: column; gap: 18px; max-width: 440px; }
+  .stack > button { align-self: flex-start; }
+  .steps { display: flex; gap: 8px; font-size: 12px; color: #6a6a6a; }
+  .steps div { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+  .steps div::before { content: ""; height: 3px; background: #262626; }
+  .steps .on { color: #c4c4c4; } .steps .on::before { background: #e6e6e6; }
+  .pin-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 32px; align-items: start; }
+  .pin { padding: 32px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  #pin-digits { display: flex; gap: 10px; }
+  #pin-digits span { width: 56px; height: 72px; background: #1f1f1f; display: grid; place-items: center; font-size: 32px; font-variant-numeric: tabular-nums; }
+  ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 12px; line-height: 1.5; color: #c4c4c4; }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 8px 20px; font-size: 13px; }
+  .kv span:nth-child(odd) { color: #6a6a6a; }
+  .settings { display: flex; flex-direction: column; }
+  .setting { display: grid; grid-template-columns: minmax(120px, 180px) minmax(0, 1fr); gap: 20px; align-items: center; padding: 16px 0; border-bottom: 1px solid #171717; }
+  .setting > span { color: #c4c4c4; }
+  .seg { display: flex; gap: 4px; flex-wrap: wrap; width: fit-content; max-width: 100%; background: #141414; border: 1px solid #2e2e2e; justify-self: start; }
+  .seg button { height: 32px; padding: 0 14px; border: 0; background: transparent; color: #8f8f8f; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .seg button:hover { color: #e6e6e6; }
+  .seg button[aria-pressed="true"] { background: #e6e6e6; color: #0e0e0e; }
+  .range { display: flex; align-items: center; gap: 16px; }
+  .range input { flex: 1; max-width: 320px; accent-color: #e6e6e6; }
+  .range output { width: 72px; font-variant-numeric: tabular-nums; }
+  .result { font-size: 13px; color: #c4c4c4; min-height: 1em; }
+  kbd { font: 12px inherit; padding: 2px 7px; background: #2e2e2e; white-space: nowrap; }
+  table { border-collapse: collapse; font-size: 13px; } td { padding: 6px 20px 6px 0; color: #c4c4c4; }
+  ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #8f8f8f; line-height: 1.5; }
+  @media (max-width: 640px) {
+    .app { grid-template-columns: minmax(0, 1fr); }
+    aside { border-right: 0; border-bottom: 1px solid #1f1f1f; padding: 16px; gap: 12px; }
+    nav { flex-direction: row; }
+    .foot { margin: 0; }
+    main { padding: 24px 16px; }
+    .setting { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  }
 </style>
 </head>
 <body>
-<main>
-  <header><h1>tack</h1><form method="post" action="/logout"><button>Sign out</button></form></header>
-
-  <section class="card" aria-live="polite">
-    <div class="host">
-      <span class="dot" id="dot"></span>
-      <div>
-        <div id="host-name">Checking host…</div>
-        <div id="host-detail"></div>
-      </div>
+<div class="app">
+  <aside>
+    <div class="brand"><i></i>tack</div>
+    <nav>
+      <a href="#connect">Connect</a>
+      <a href="#host">Host</a>
+      <a href="#presets">Presets</a>
+    </nav>
+    <div class="foot">
+      <div class="row"><span class="dot small" id="agent-dot"></span><span id="agent-label">Host agent waiting</span></div>
+      <form method="post" action="/logout"><span>admin</span><button class="link">Sign out</button></form>
     </div>
-    <p id="notice"></p>
-    <a class="start" id="start" href="/stream" aria-disabled="true">Start streaming</a>
-  </section>
+  </aside>
 
-  <h2>Sunshine host</h2>
-  <form class="card" id="pair">
-    <label>Host LAN IP <input id="address" required placeholder="192.168.1.10" autocomplete="off"></label>
-    <button>Pair and save host</button>
-    <output id="pair-result" aria-live="polite"></output>
-  </form>
+  <main>
+    <section id="connect" aria-labelledby="connect-title">
+      <div><h1 id="connect-title">Connect</h1><p class="sub" id="device-line"></p></div>
 
-  <h2>This browser</h2>
-  <div class="card" id="preferences">
-    <label>Resolution <select id="res"><option value="">Native</option><option>1366x768</option><option>1920x1080</option></select></label>
-    <label>Frame rate <select id="fps"><option>60</option><option>30</option><option>120</option></select> fps</label>
-    <label>Bitrate <select id="bitrate"><option value="">Automatic</option><option value="12000">12 Mbps</option><option value="20000">20 Mbps</option><option value="30000">30 Mbps</option></select></label>
-    <fieldset id="send-keys"><legend>Show in the Send to host menu</legend></fieldset>
-  </div>
+      <div class="empty" id="no-host" hidden>
+        <div style="font-size:17px;font-weight:500">No host yet</div>
+        <p>Add your Sunshine PC by address and pair it once with a PIN. After that, connecting is one click.</p>
+        <a class="primary" href="#host">Add host</a>
+      </div>
 
-  <h2>Admin password</h2>
-  <form id="password-form" class="card" method="post" action="/api/password">
-    <label>Current password <input name="current" type="password" autocomplete="current-password" required></label>
-    <label>New password <input name="new" type="password" autocomplete="new-password" required></label>
-    <label>Confirm new password <input name="confirm" type="password" autocomplete="new-password" required></label>
-    <button>Change password and sign out</button>
-    <output id="password-result" aria-live="polite"></output>
-  </form>
+      <div id="host-card" hidden>
+        <div class="card" aria-live="polite">
+          <div class="pad host-head">
+            <div>
+              <div class="row" style="gap:10px"><span class="dot" id="dot"></span><span id="host-name">Checking host…</span></div>
+              <div id="host-detail"></div>
+            </div>
+            <div class="badge" id="session-label">No active stream</div>
+          </div>
+          <div class="host-foot">
+            <div id="preset-line-wrap"><span id="preset-line"></span> · <a href="#presets">Edit preset</a></div>
+            <a class="primary big" id="start" href="/stream" aria-disabled="true">Connect</a>
+          </div>
+        </div>
+        <p class="note" style="margin-top:12px">Opening a stream relaunches the session at this device's resolution. If another device is streaming, it will be disconnected.</p>
+      </div>
 
-  <h2>First time on this device</h2>
-  <div class="card">
-    <p style="margin-top:0">Pointer lock, keyboard capture and clipboard need HTTPS. Import the tack certificate authority once per device:</p>
-    <p><a href="/ca.pem" download="tack-ca.pem">Download tack-ca.pem</a></p>
-    <ul class="muted">
-      <li>ChromeOS: Settings › Privacy and security › Security › Manage certificates › Authorities › Import, and trust it for websites.</li>
-      <li>Windows (Chrome/Edge): open the file › Install Certificate › Local Machine › Trusted Root Certification Authorities.</li>
-      <li>Firefox: Settings › Privacy &amp; Security › Certificates › View Certificates › Authorities › Import.</li>
-    </ul>
-  </div>
+      <div>
+        <h2>First time on this device</h2>
+        <p class="sub" style="font-size:13px;line-height:1.5;margin-bottom:12px">Pointer lock, keyboard capture and clipboard need HTTPS. Import the tack certificate authority once per device: <a href="/ca.pem" download="tack-ca.pem">download tack-ca.pem</a>.</p>
+        <ul>
+          <li>ChromeOS: Settings › Privacy and security › Security › Manage certificates › Authorities › Import, and trust it for websites.</li>
+          <li>Windows (Chrome/Edge): open the file › Install Certificate › Local Machine › Trusted Root Certification Authorities.</li>
+          <li>Firefox: Settings › Privacy &amp; Security › Certificates › View Certificates › Authorities › Import.</li>
+        </ul>
+      </div>
 
-  <h2>While streaming</h2>
-  <div class="card">
-    <table>
-      <tr><td><kbd>Ctrl+Alt+Shift+H</kbd></td><td>Menu (send keys, fixes, disconnect)</td></tr>
-      <tr><td><kbd>Ctrl+Alt+Shift+F</kbd></td><td>Fullscreen, captures all keys on Chrome</td></tr>
-      <tr><td><kbd>Ctrl+Alt+Shift+M</kbd></td><td>Mouse mode: desktop or game (pointer lock)</td></tr>
-      <tr><td><kbd>Ctrl+Alt+Shift+S</kbd></td><td>Stats</td></tr>
-      <tr><td><kbd>Ctrl+Alt+Shift+N</kbd></td><td>Fix cursor: use if you see two cursors, or none</td></tr>
-    </table>
-  </div>
-</main>
+      <div>
+        <h2>While streaming</h2>
+        <table>
+          <tr><td><kbd>Ctrl Alt Shift H</kbd></td><td>Menu (send keys, clipboard, fixes, disconnect)</td></tr>
+          <tr><td><kbd>Ctrl Alt Shift F</kbd></td><td>Fullscreen, captures all keys on Chrome</td></tr>
+          <tr><td><kbd>Ctrl Alt Shift M</kbd></td><td>Mouse mode: absolute or relative (pointer lock)</td></tr>
+          <tr><td><kbd>Ctrl Alt Shift S</kbd></td><td>Corner stats</td></tr>
+          <tr><td><kbd>Ctrl Alt Shift N</kbd></td><td>Fix cursor: use if you see two cursors, or none</td></tr>
+        </table>
+      </div>
+    </section>
+
+    <section id="host" aria-labelledby="host-title" hidden>
+      <div><h1 id="host-title">Host</h1><p class="sub">One Sunshine host. Pairing happens once.</p></div>
+      <div class="steps" id="pair-steps"><div>Address</div><div>Enter PIN in Sunshine</div><div>Paired</div></div>
+
+      <form class="stack" id="pair" data-step="0">
+        <label class="field">Host address<input id="address" required placeholder="192.168.1.10" autocomplete="off" inputmode="decimal"></label>
+        <p class="sub" style="font-size:13px;line-height:1.5">Use the PC's LAN IP. The bridge reaches Sunshine on its default ports (47984–48010).</p>
+        <button class="primary">Start pairing</button>
+        <output class="result" id="pair-result" aria-live="polite"></output>
+      </form>
+
+      <div data-step="1" hidden>
+        <div class="pin-grid">
+          <div class="card pin">
+            <div style="font-size:12px;color:#8f8f8f">PIN</div>
+            <div id="pin-digits"></div>
+            <div class="row muted" style="font-size:13px"><span class="dot small ok"></span>Waiting for Sunshine</div>
+          </div>
+          <ol>
+            <li>On the gaming PC, open Sunshine's web UI at <span style="color:#e6e6e6">https://localhost:47990/pin</span>.</li>
+            <li>Go to <span style="color:#e6e6e6;font-weight:500">PIN</span> and enter the four digits shown here.</li>
+            <li>Name the client anything, e.g. "tack".</li>
+          </ol>
+        </div>
+        <button class="ghost" id="cancel-pair" style="margin-top:24px">Cancel</button>
+      </div>
+
+      <div class="card" data-step="2" style="padding:28px;display:flex;flex-direction:column;gap:18px;max-width:520px" hidden>
+        <div class="row" style="gap:10px"><span class="dot ok"></span><span style="font-size:18px;font-weight:500" id="paired-title">Paired</span></div>
+        <div class="kv"><span>Address</span><span id="paired-address"></span><span>Status</span><span id="paired-status"></span><span>Client cert</span><span>Stored on the bridge</span><span>Host agent</span><span id="paired-agent"></span></div>
+        <div class="row" style="gap:10px">
+          <a class="primary" href="#connect">Go to Connect</a>
+          <button class="ghost" id="repair">Pair a different host</button>
+        </div>
+      </div>
+
+      <div>
+        <h2>Admin password</h2>
+        <form class="stack" id="password-form" method="post" action="/api/password">
+          <label class="field">Current password<input name="current" type="password" autocomplete="current-password" required></label>
+          <label class="field">New password<input name="new" type="password" autocomplete="new-password" required></label>
+          <label class="field">Confirm new password<input name="confirm" type="password" autocomplete="new-password" required></label>
+          <button class="ghost">Change password and sign out</button>
+          <output class="result" id="password-result" aria-live="polite"></output>
+        </form>
+      </div>
+    </section>
+
+    <section id="presets" aria-labelledby="presets-title" hidden>
+      <div><h1 id="presets-title">Presets</h1><p class="sub">Saved in this browser. Changes apply on the next launch.</p></div>
+      <div class="settings">
+        <div class="setting"><span id="res-label">Resolution</span><div class="seg" id="res" role="group" aria-labelledby="res-label"></div></div>
+        <div class="setting"><span id="fps-label">Frame rate</span><div class="seg" id="fps" role="group" aria-labelledby="fps-label"></div></div>
+        <div class="setting"><label for="bitrate">Bitrate</label><div class="range"><input type="range" id="bitrate" min="0" max="50" step="1"><output for="bitrate" id="bitrate-out"></output></div></div>
+      </div>
+      <p class="note">Native uses this screen's pixels. Auto bitrate is 12 Mbps up to 800 lines, otherwise 25 Mbps.</p>
+      <div>
+        <h2 id="keys-label">Send to host menu</h2>
+        <p class="sub" style="font-size:13px;margin-bottom:12px">Shortcuts shown in the stream menu. Firefox can't capture these keys itself.</p>
+        <div class="seg" id="send-keys" role="group" aria-labelledby="keys-label"></div>
+      </div>
+    </section>
+  </main>
+</div>
 <script type="module" src="/dist/home.js"></script>
 </body>
 </html>

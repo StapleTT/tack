@@ -4,50 +4,110 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>tack · stream</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  html, body { margin: 0; height: 100%; background: #000; color: #eee; font: 16px system-ui, sans-serif; overflow: hidden; }
-  video { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; }
-  #overlay { position: fixed; inset: 0; display: flex; flex-direction: column; gap: 1rem; align-items: center; justify-content: center; background: rgba(0,0,0,.75); }
-  #overlay[hidden] { display: none; }
-  button { font: inherit; padding: .75rem 2rem; border: 0; border-radius: .5rem; background: #3a7afe; color: #fff; cursor: pointer; }
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; height: 100%; background: #0a0a0a; color: #e6e6e6; font: 14px "JetBrains Mono", ui-monospace, Menlo, monospace; -webkit-font-smoothing: antialiased; overflow: hidden; }
+  a { color: #8f8f8f; } a:hover { color: #e6e6e6; }
+  button { font: inherit; color: inherit; border-radius: 0; cursor: pointer; }
   button:disabled { opacity: .5; cursor: default; }
-  #stats { position: fixed; top: .5rem; left: .5rem; font: 12px ui-monospace, monospace; background: rgba(0,0,0,.6); padding: .25rem .5rem; white-space: pre; pointer-events: none; }
-  a { color: #8ab4ff; }
-  #banner { position: fixed; top: 1rem; left: 50%; transform: translateX(-50%); background: rgba(20,20,20,.85); padding: .5rem 1rem; border-radius: .5rem; pointer-events: none; }
-  #menu { position: fixed; top: 1rem; right: 1rem; width: 18rem; background: rgba(20,20,20,.95); border-radius: .5rem; padding: 1rem; display: grid; gap: .5rem; }
-  #menu[hidden], #banner[hidden], #sound[hidden], #connect[hidden] { display: none; }
-  #sound { position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%); }
-  #menu button { padding: .4rem .75rem; background: #333; text-align: left; }
-  #menu h2 { font-size: .8rem; margin: .5rem 0 0; color: #aaa; font-weight: normal; }
-  kbd { font: 12px ui-monospace, monospace; background: #333; padding: 0 .3rem; border-radius: .2rem; }
+  :focus-visible { outline: 2px solid #e6e6e6; outline-offset: 2px; }
+  video { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  .float { position: fixed; background: rgba(14,14,14,.85); pointer-events: none; }
+  #stats { top: 14px; left: 14px; padding: 10px 12px; background: rgba(14,14,14,.78); display: grid; grid-template-columns: auto auto; gap: 3px 14px; font-size: 11px; font-variant-numeric: tabular-nums; }
+  #stats span:nth-child(odd) { color: #8a8a8a; } #stats span:nth-child(even) { text-align: right; }
+  #hint { bottom: 24px; left: 50%; transform: translateX(-50%); padding: 10px 16px; font-size: 13px; color: #c4c4c4; display: flex; gap: 8px; align-items: center; }
+  kbd { font: 12px inherit; padding: 2px 7px; background: #2e2e2e; }
+  #banner { top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 22px 28px; background: rgba(14,14,14,.9); border: 1px solid #e6e6e6; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
+  #banner b { font-size: 17px; font-weight: 500; } #banner span { color: #c4c4c4; }
+  #toast { top: 18px; left: 50%; transform: translateX(-50%); padding: 8px 14px; font-size: 12px; color: #c4c4c4; }
+  #sound { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); height: 40px; padding: 0 18px; border: 0; background: #e6e6e6; color: #0e0e0e; font-weight: 500; }
+  #menu { position: fixed; top: 16px; right: 16px; bottom: 16px; width: 340px; max-width: calc(100% - 32px); overflow: auto; background: rgba(14,14,14,.97); border: 1px solid #2e2e2e; padding: 20px; display: flex; flex-direction: column; gap: 22px; }
+  .head { display: flex; justify-content: space-between; align-items: flex-start; }
+  #host-name { font-size: 16px; font-weight: 500; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #e6e6e6; display: inline-block; margin-right: 8px; }
+  .sub { font-size: 12px; color: #8f8f8f; font-variant-numeric: tabular-nums; margin-top: 4px; }
+  .small { border: 0; background: #262626; color: #c4c4c4; height: 28px; padding: 0 10px; font-size: 12px; }
+  #grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: #262626; flex-shrink: 0; }
+  #grid div { background: #171717; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+  #grid span { font-size: 11px; color: #8a8a8a; } #grid b { font-size: 16px; font-weight: 400; font-variant-numeric: tabular-nums; }
+  .text { align-self: flex-start; margin-top: -12px; border: 0; background: none; padding: 0; color: #8f8f8f; font-size: 12px; }
+  .text:hover { color: #e6e6e6; }
+  .group { display: flex; flex-direction: column; gap: 10px; }
+  .label { display: flex; justify-content: space-between; gap: 12px; text-align: right; font-size: 12px; color: #8f8f8f; } .label span + span { color: #c4c4c4; }
+  .seg { display: flex; gap: 4px; background: #171717; border: 1px solid #2e2e2e; }
+  .seg button { flex: 1; height: 32px; border: 0; background: transparent; color: #8f8f8f; font-size: 13px; }
+  .seg button[aria-pressed="true"] { background: #e6e6e6; color: #0e0e0e; }
+  .keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .line { height: 34px; padding: 0 4px; white-space: nowrap; border: 1px solid #3a3a3a; background: transparent; color: #e6e6e6; font-size: 13px; }
+  .keys .line { font-size: 12px; }
+  .line:hover { background: #262626; }
+  .tiny { font-size: 11px; color: #6a6a6a; }
+  #disconnect-btn { flex-shrink: 0; margin-top: auto; height: 40px; }
+  #overlay { position: fixed; inset: 0; background: rgba(10,10,10,.86); display: grid; place-items: center; padding: 24px; }
+  #overlay > div { width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 14px; }
+  #message { font-size: 22px; font-weight: 500; margin: 0; }
+  #detail { font-size: 14px; color: #8f8f8f; line-height: 1.5; margin: 0; }
+  #detail:empty { display: none; }
+  .actions { display: flex; gap: 10px; margin-top: 6px; align-items: center; }
+  #connect { height: 44px; padding: 0 20px; border: 0; background: #e6e6e6; color: #0e0e0e; font-size: 14px; font-weight: 500; }
+  #connect:hover { background: #fff; }
+  .actions a { height: 44px; padding: 0 18px; border: 1px solid #3a3a3a; color: #c4c4c4; display: inline-flex; align-items: center; text-decoration: none; }
 </style>
 </head>
 <body>
 <video id="video" autoplay playsinline></video>
-<div id="stats" hidden></div>
+<div id="stats" class="float" hidden></div>
+<div id="hint" class="float" hidden><kbd>Ctrl Alt Shift H</kbd>for menu</div>
+<div id="toast" class="float" hidden>Pointer locked · Esc to release</div>
 <button id="sound" hidden>Click to enable sound</button>
-<div id="banner" hidden>Click or press a key to capture the mouse</div>
+<div id="banner" class="float" hidden><b>Game focused</b><span>Click or press any key to lock the pointer</span></div>
 <div id="menu" hidden>
-  <small>Menu: <kbd>Ctrl+Alt+Shift+H</kbd></small>
-  <button data-act="fullscreen">Fullscreen <kbd>Ctrl+Alt+Shift+F</kbd></button>
-  <button data-act="mode">Mouse: <span id="mode">absolute</span> <kbd>Ctrl+Alt+Shift+M</kbd></button>
-  <button data-act="stats">Stats <kbd>Ctrl+Alt+Shift+S</kbd></button>
-  <h2>Send to host</h2>
-  <button data-act="paste">Paste clipboard to host <small>(Ctrl+V does this too)</small></button>
-  <button data-act="esc">Esc</button>
-  <button data-act="win">Super (Win)</button>
-  <button data-act="alttab">Alt+Tab</button>
-  <button data-act="altf4">Alt+F4</button>
-  <button data-act="cad">Ctrl+Alt+Del</button>
-  <h2>Fixes</h2>
-  <button data-act="cursor">Fix cursor (two or none) <kbd>Ctrl+Alt+Shift+N</kbd></button>
-  <button data-act="disconnect">Disconnect</button>
-  <a href="/">Home</a>
+  <div class="head">
+    <div><div><span class="dot"></span><span id="host-name">Host</span></div><div class="sub" id="menu-sub"></div></div>
+    <button class="small" data-act="menu">Close</button>
+  </div>
+  <div id="grid"></div>
+  <button class="text" data-act="stats" id="stats-toggle">Show corner stats</button>
+
+  <div class="group">
+    <div class="label"><span>Mouse</span><span id="mode">absolute</span></div>
+    <div class="seg"><button data-act="absolute">Absolute</button><button data-act="relative">Relative</button></div>
+  </div>
+
+  <div class="group">
+    <div class="label"><span>Keyboard</span><span id="kb-status"></span></div>
+    <button class="line" data-act="fullscreen" id="fs-btn">Fullscreen + keyboard lock</button>
+    <div class="keys">
+      <button class="line" data-act="esc">Esc</button>
+      <button class="line" data-act="win">Super</button>
+      <button class="line" data-act="alttab">Alt Tab</button>
+      <button class="line" data-act="altf4">Alt F4</button>
+      <button class="line" data-act="cad">Ctrl Alt Del</button>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="label"><span>Clipboard</span></div>
+    <button class="line" data-act="paste" id="paste-btn">Send my clipboard to host</button>
+    <span class="tiny">Text only, up to 1 MB. Ctrl V also sends.</span>
+  </div>
+
+  <div class="group">
+    <div class="label"><span>Fixes</span></div>
+    <button class="line" data-act="cursor">Fix cursor (two or none)</button>
+  </div>
+
+  <button class="line" data-act="disconnect" id="disconnect-btn">Disconnect</button>
 </div>
 <div id="overlay">
-  <p id="message" role="status">Connecting…</p>
-  <button id="connect" hidden>Connect</button>
-  <small><a href="/">Home</a></small>
+  <div>
+    <p id="message" role="status">Connecting…</p>
+    <p id="detail"></p>
+    <div class="actions"><button id="connect" hidden>Connect</button><a href="/">Back to panel</a></div>
+  </div>
 </div>
 <script type="module" src="/dist/stream.js"></script>
 </body>

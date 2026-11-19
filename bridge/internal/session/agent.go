@@ -39,6 +39,13 @@ func (m *Manager) ClearAgent(id int) {
 	}
 }
 
+// AgentConnected reports whether a host agent is connected.
+func (m *Manager) AgentConnected() bool {
+	m.agentMu.Lock()
+	defer m.agentMu.Unlock()
+	return m.agentSend != nil
+}
+
 // FromAgent routes one agent message to the current browser.
 func (m *Manager) FromAgent(msg agentproto.Message) {
 	s := m.live.Load()

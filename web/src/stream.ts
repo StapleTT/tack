@@ -14,6 +14,9 @@ const statsEl = $<HTMLDivElement>("stats");
 const banner = $<HTMLDivElement>("banner");
 const menu = $<HTMLDivElement>("menu");
 const soundBtn = $<HTMLButtonElement>("sound");
+const detail = $<HTMLParagraphElement>("detail");
+const hint = $<HTMLDivElement>("hint");
+const toast = $<HTMLDivElement>("toast");
 
 // Optional overrides: /stream?fps=60&bitrate=20000&res=1280x720
 const params = new URLSearchParams(location.search);
@@ -36,9 +39,21 @@ let reconnectTimer = 0;
 let reconnectDeadline = 0;
 let statsTimer = 0;
 let showStats = false;
+let flashTimer = 0;
 
-function show(text: string, button = "Connect") {
+fetch("/api/status").then((r) => r.json()).then((st) => { $("host-name").textContent = st.host || "Host"; }).catch(() => {});
+
+// Briefly show a floating hint (menu shortcut, pointer locked).
+function flash(el: HTMLElement, ms: number) {
+  hint.hidden = toast.hidden = true;
+  el.hidden = false;
+  clearTimeout(flashTimer);
+  flashTimer = window.setTimeout(() => { el.hidden = true; }, ms);
+}
+
+function show(text: string, button = "Connect", body = "") {
   message.textContent = text;
+  detail.textContent = body;
   connectBtn.textContent = button;
   connectBtn.disabled = false;
   connectBtn.hidden = false;
@@ -55,6 +70,7 @@ function stop() {
   pc = null;
   menu.hidden = true;
   statsEl.hidden = true;
+  hint.hidden = toast.hidden = true;
   soundBtn.hidden = true;
 }
 
@@ -81,12 +97,27 @@ debug.hostCursor = hostCursor;
 
 const ui = {
   armed: (on: boolean) => { banner.hidden = !on || !menu.hidden; },
-  modeChanged: (mode: MouseMode) => { $("mode").textContent = mode; hostCursor.cancel(); },
+  modeChanged: (mode: MouseMode) => { showMode(mode); hostCursor.cancel(); },
   hostPointer: (x: number, y: number) => hostCursor.moved(x, y),
   menuOpen: () => !menu.hidden,
   hotkey: (key: "menu" | "fullscreen" | "stats" | "mode") => act(key),
   sendControl: (msg: object) => { if (control?.readyState === "open") control.send(JSON.stringify(msg)); },
 };
+
+function showMode(mode: MouseMode) {
+  $("mode").textContent = mode;
+  for (const m of ["absolute", "relative"]) menu.querySelector(`[data-act=${m}]`)!.setAttribute("aria-pressed", String(m === mode));
+}
+showMode("absolute");
+
+function showKeyboard() {
+  const locked = !!document.fullscreenElement && !!(navigator as Navigator & { keyboard?: object }).keyboard;
+  $("kb-status").textContent = !document.fullscreenElement ? "Go fullscreen to capture all keys" : locked ? "Locked · all keys sent" : "Fullscreen · no keyboard lock";
+  $("fs-btn").textContent = document.fullscreenElement ? "Exit fullscreen" : "Fullscreen + keyboard lock";
+}
+showKeyboard();
+document.addEventListener("fullscreenchange", showKeyboard);
+document.addEventListener("pointerlockchange", () => { if (document.pointerLockElement) flash(toast, 2200); });
 
 function act(name: string) {
   switch (name) {
@@ -94,18 +125,31 @@ function act(name: string) {
       menu.hidden = !menu.hidden;
       if (!menu.hidden && document.pointerLockElement) document.exitPointerLock();
       ui.armed(input?.mode === "relative" && !document.pointerLockElement);
+      if (!menu.hidden) hint.hidden = true;
       return;
     case "fullscreen": return toggleFullscreen();
-    case "stats": showStats = !showStats; statsEl.hidden = !showStats; return;
+    case "stats":
+      showStats = !showStats;
+      statsEl.hidden = !showStats;
+      $("stats-toggle").textContent = showStats ? "Hide corner stats" : "Show corner stats";
+      return;
     case "mode": input?.setMode(input.mode === "absolute" ? "relative" : "absolute"); return;
+    case "absolute": case "relative": input?.setMode(name); return;
     case "esc": return input?.sendCombo([VK.Escape]);
     case "win": return input?.sendCombo([VK.LWin]);
     case "alttab": return input?.sendCombo([VK.LAlt, VK.Tab]);
     case "altf4": return input?.sendCombo([VK.LAlt, VK.F4]);
     case "cad": return input?.sendCombo([VK.LControl, VK.LAlt, VK.Delete]);
     case "cursor": return input?.toggleHostCursor();
-    case "paste": input?.uploadClipboard(); return;
-    case "disconnect": stop(); show("Disconnected.", "Connect"); return;
+    case "paste": {
+      const b = $("paste-btn");
+      void input?.uploadClipboard().then((sent) => {
+        b.textContent = sent ? "Sent to host ✓" : "Nothing new to send";
+        setTimeout(() => { b.textContent = "Send my clipboard to host"; }, 1800);
+      });
+      return;
+    }
+    case "disconnect": stop(); show("Disconnected", "Connect"); return;
   }
 }
 
@@ -149,6 +193,7 @@ async function connect(resumeOnly = false) {
   stop();
   connectBtn.disabled = true;
   message.textContent = "Connecting…";
+  detail.textContent = "";
 
   const conn = new RTCPeerConnection();
   pc = conn;
@@ -173,8 +218,8 @@ async function connect(resumeOnly = false) {
   ctl.onmessage = (e) => {
     if (conn !== pc) return;
     const msg = JSON.parse(e.data);
-    if (msg.type === "kicked") { stop(); show("Taken over by another device.", "Take back"); }
-    else if (msg.type === "ended") { stop(); show(`Stream ended: ${msg.reason}`, "Reconnect"); }
+    if (msg.type === "kicked") { stop(); show("Taken over by another device", "Take it back", "Another device started a stream, so this one ended. Taking it back relaunches the session at this device's resolution."); }
+    else if (msg.type === "ended") { stop(); show("Session ended", "Reconnect", `The stream ended: ${msg.reason}.`); }
     else if (msg.type === "mode") input?.setMode(msg.mode);
     else if (msg.type === "rumble") input?.playRumble(msg.pad, msg.low, msg.high);
     else if (msg.type === "cursors") void hostCursor.load(msg.cursors, msg.size);
@@ -189,10 +234,14 @@ async function connect(resumeOnly = false) {
       reconnectDeadline = Date.now() + 30_000;
       reconnectTimer = window.setTimeout(() => start(true), 6000);
     }
-    if (conn.connectionState === "connected") { reconnectDeadline = 0; overlay.hidden = true; }
+    if (conn.connectionState === "connected") {
+      reconnectDeadline = 0;
+      overlay.hidden = true;
+      if (menu.hidden) flash(hint, 5000);
+    }
     if (conn.connectionState === "failed") {
       if (Date.now() < reconnectDeadline) start(true);
-      else { stop(); show("Connection lost.", "Reconnect"); }
+      else { stop(); show("Connection lost", "Reconnect", "The bridge no longer holds the session. Reconnecting starts a new one."); }
     }
   };
 
@@ -215,7 +264,7 @@ async function connect(resumeOnly = false) {
   });
   if (!res.ok) {
     stop();
-    show(`Could not start: ${(await res.text()).trim()}`, "Retry");
+    show("Could not start", "Retry", (await res.text()).trim());
     return;
   }
   const { sdp } = await res.json();
@@ -227,7 +276,8 @@ async function connect(resumeOnly = false) {
 // Receiver counters start over for each peer connection.
 let lastFrames = 0, lastDecodeTime = 0;
 async function updateStats(conn: RTCPeerConnection) {
-  let line = "";
+  const rows: [string, string][] = [];
+  let sub = "";
   (await conn.getStats()).forEach((s) => {
     if (s.type === "inbound-rtp" && s.kind === "video") {
       const frames = s.framesDecoded ?? 0;
@@ -235,13 +285,17 @@ async function updateStats(conn: RTCPeerConnection) {
       const n = frames - lastFrames;
       const decodeMs = n > 0 ? ((decode - lastDecodeTime) / n) * 1000 : 0;
       lastFrames = frames; lastDecodeTime = decode;
-      line += `${s.frameWidth}x${s.frameHeight} ${n} fps  decode ${decodeMs.toFixed(1)} ms  lost ${s.packetsLost}  dropped ${s.framesDropped ?? 0}\n`;
+      sub = `${s.frameWidth}×${s.frameHeight} · ${n} fps`;
+      rows.push(["Frame rate", `${n} fps`], ["Decode", `${decodeMs.toFixed(1)} ms`], ["Lost", String(s.packetsLost)], ["Dropped", String(s.framesDropped ?? 0)]);
     }
     if (s.type === "candidate-pair" && s.nominated && s.currentRoundTripTime !== undefined) {
-      line += `rtt ${(s.currentRoundTripTime * 1000).toFixed(1)} ms\n`;
+      rows.unshift(["RTT", `${(s.currentRoundTripTime * 1000).toFixed(1)} ms`]);
     }
   });
-  statsEl.textContent = line.trim();
+  const span = (text: string, tag = "span") => Object.assign(document.createElement(tag), { textContent: text });
+  statsEl.replaceChildren(...rows.flatMap(([k, v]) => [span(k), span(v)]));
+  $("grid").replaceChildren(...rows.map(([k, v]) => { const d = span("", "div"); d.append(span(k), span(v, "b")); return d; }));
+  $("menu-sub").textContent = sub;
   statsEl.hidden = !showStats;
 }
 
@@ -250,10 +304,10 @@ function start(resumeOnly = false) {
   connect(resumeOnly).catch((err) => {
     stop();
     if (resumeOnly && Date.now() + 1500 < reconnectDeadline) {
-      show("Waiting for the network…", "");
+      show("Connection lost", "", `Reconnecting. The session is held for ${Math.round((reconnectDeadline - Date.now()) / 1000)} s.`);
       connectBtn.hidden = true;
       reconnectTimer = window.setTimeout(() => start(true), 1500);
-    } else show(`Connection failed: ${err}`, "Retry");
+    } else show("Connection failed", "Retry", String(err));
   });
 }
 connectBtn.addEventListener("click", () => start());

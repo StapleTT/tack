@@ -8,7 +8,7 @@ This file describes what exists. Planned parts are marked.
 |---|---|
 | `GET /` | LAN admin panel, pairing, per-browser preferences and stream launch |
 | `GET /stream` | Stream client. Connects on load. Optional `?fps=60&bitrate=20000&res=1280x720` overrides. |
-| `GET /api/status` | `{"host","online","paired","app","streaming","error"}` for the homepage |
+| `GET /api/status` | `{"host","address","online","paired","app","streaming","agent","error"}` for the admin panel. `agent` is true while a host agent is connected. |
 | `GET, POST /login`, `POST /logout` | Sign in with the bridge admin password or revoke the browser session. Admin pages and APIs require the secure session cookie. |
 | `POST /api/password` | Authenticated form containing `current`, `new` and `confirm`. Success saves the new hash and revokes all browser sessions. |
 | `POST /api/pair` | JSON with `address` (LAN IP) and `pin` (four digits). Saves the pinned host after successful pairing. |

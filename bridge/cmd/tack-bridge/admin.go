@@ -22,8 +22,7 @@ func adminAccess(next http.Handler, path string, hash []byte) http.Handler {
 			return
 		case "/login":
 			if r.Method == "GET" {
-				w.Header().Set("Content-Type", "text/html; charset=utf-8")
-				w.Write([]byte(`<!doctype html><html lang="en"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Sign in · tack</title><style>:root{color-scheme:dark;font:1rem/1.6 system-ui;background:#101217}main{max-width:24rem;margin:12vh auto;padding:2rem}input,button{font:inherit;padding:.5rem}a{color:#9ac1ff}</style><main><h1>tack</h1><form method="post"><label>Admin password<br><input type="password" name="password" autocomplete="current-password" required autofocus></label> <button>Sign in</button></form><a href="/ca.pem">Download bridge CA</a></main></html>`))
+				loginPage(w, 200, "")
 				return
 			}
 			if r.Method != "POST" {
@@ -40,13 +39,13 @@ func adminAccess(next http.Handler, path string, hash []byte) http.Handler {
 			mu.Unlock()
 			password := []byte(r.PostForm.Get("password"))
 			if len(password) > 72 || bcrypt.CompareHashAndPassword(snapshot, password) != nil {
-				http.Error(w, "Incorrect admin password. Go back to try again.", 401)
+				loginPage(w, 401, "Incorrect admin password.")
 				return
 			}
 			mu.Lock()
 			if !bytes.Equal(snapshot, hash) {
 				mu.Unlock()
-				http.Error(w, "Password changed. Sign in again.", 401)
+				loginPage(w, 401, "Password changed. Sign in again.")
 				return
 			}
 			session := rand.Text()
@@ -123,4 +122,29 @@ func adminAccess(next http.Handler, path string, hash []byte) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	}))
+}
+
+// loginPage writes the sign-in form. msg must be a fixed string: it is not escaped.
+func loginPage(w http.ResponseWriter, code int, msg string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(code)
+	if msg != "" {
+		msg = `<p class="err" role="alert">` + msg + `</p>`
+	}
+	w.Write([]byte(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Sign in · tack</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:#0e0e0e;color:#e6e6e6;font:14px "JetBrains Mono",ui-monospace,Menlo,monospace;-webkit-font-smoothing:antialiased}
+form{width:100%;max-width:360px;display:flex;flex-direction:column;gap:28px}
+.brand{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:500}.brand i{width:10px;height:10px;background:#e6e6e6}
+h1{font-size:22px;font-weight:500;margin:18px 0 8px}p{margin:0;color:#8f8f8f}
+label{display:flex;flex-direction:column;gap:6px;font-size:12px;color:#8f8f8f}
+input{height:44px;padding:0 14px;border:1px solid #2e2e2e;border-radius:0;background:#141414;color:#e6e6e6;font:inherit;font-size:15px;outline:none}input:focus{border-color:#e6e6e6}
+button{height:46px;border:0;border-radius:0;background:#e6e6e6;color:#0e0e0e;font:inherit;font-size:15px;font-weight:500;cursor:pointer}button:hover{background:#fff}button:focus-visible{outline:2px solid #e6e6e6;outline-offset:2px}
+.err{color:#e6e6e6;border-left:2px solid #e6e6e6;padding-left:10px}small{font-size:12px;color:#6a6a6a;line-height:1.5}a{color:#c4c4c4}
+</style>
+<form method="post"><div><div class="brand"><i></i>tack</div><h1>Sign in</h1><p>Admin access to this bridge</p></div>` + msg + `
+<label>Admin password<input type="password" name="password" autocomplete="current-password" required autofocus></label>
+<button>Sign in</button>
+<small>Single admin account. New device? <a href="/ca.pem" download="tack-ca.pem">Download the bridge CA</a> first.</small></form></html>`))
 }

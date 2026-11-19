@@ -75,7 +75,7 @@ func serve(ctx context.Context, dataDir, listen string, udpPort int, app string)
 		hostMu.RUnlock()
 		if current.Host == "" {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(status{Error: "No host paired"})
+			json.NewEncoder(w).Encode(status{Agent: mgr.AgentConnected(), Error: "No host paired"})
 			return
 		}
 		sctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
@@ -185,13 +185,15 @@ type status struct {
 	Paired    bool   `json:"paired"`
 	App       string `json:"app"`
 	Streaming bool   `json:"streaming"`
+	Agent     bool   `json:"agent"`
+	Address   string `json:"address,omitempty"`
 	Error     string `json:"error,omitempty"`
 }
 
 var pinPattern = regexp.MustCompile(`^[0-9]{4}$`)
 
 func hostStatus(ctx context.Context, host *nvhttp.Client, mgr *session.Manager) status {
-	st := status{Host: host.Host, Streaming: mgr.Streaming()}
+	st := status{Host: host.Host, Address: host.Host, Streaming: mgr.Streaming(), Agent: mgr.AgentConnected()}
 	si, err := host.ServerInfo(ctx)
 	if err != nil {
 		st.Error = err.Error()
