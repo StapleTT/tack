@@ -52,7 +52,11 @@ void tackInitCallbacks(PCONNECTION_LISTENER_CALLBACKS cl, PDECODER_RENDERER_CALL
     dr->submitDecodeUnit = submitDecodeUnit;
     // Go side only copies the frame and does a non-blocking channel send, so
     // it is safe to run on the receive thread and skips a queue hop.
-    dr->capabilities = CAPABILITY_DIRECT_SUBMIT;
+    // Reference frame invalidation lets Sunshine recover from frame loss by
+    // re-referencing an older frame instead of sending an IDR. It also lifts
+    // the 1-reference-frame limit in the SDP. Frames are forwarded unmodified,
+    // which RFI requires (no SPS patching). Only H.264 is negotiated today.
+    dr->capabilities = CAPABILITY_DIRECT_SUBMIT | CAPABILITY_REFERENCE_FRAME_INVALIDATION_AVC;
 
     LiInitializeAudioCallbacks(ar);
     ar->init = audioInit;
