@@ -58,7 +58,12 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	roots := x509.NewCertPool()
+	// The bridge's own CA, plus the system roots for a bridge behind a reverse
+	// proxy with a public certificate.
+	roots, err := x509.SystemCertPool()
+	if err != nil {
+		roots = x509.NewCertPool()
+	}
 	if !roots.AppendCertsFromPEM(caPEM) {
 		log.Fatalf("%s: no certificate", *caFile)
 	}

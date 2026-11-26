@@ -21,7 +21,7 @@ Order puts make-or-break unknowns first.
 
 ## Phase 2: internet
 
-7. CGNAT check first. Then reverse proxy for page and signaling, forwarded UDP port for media, admin second factor.
+7. Reverse proxy for everything: WebSocket transport fallback (built), optional forwarded UDP port plus `-public-ip` for lower latency (built; CGNAT breaks it), admin second factor (open).
 
 ## Later, not v1
 

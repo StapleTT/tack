@@ -5,8 +5,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/pion/webrtc/v4"
-
+	"tack/bridge/internal/moonlight"
 	"tack/internal/agentproto"
 )
 
@@ -132,17 +131,21 @@ func (m *Manager) agentState() []any {
 
 // handleControl takes browser messages on the control channel. Clipboard
 // text arrives in chunks; the last one (more=false) carries the paste id.
-func (m *Manager) handleControl(s *Session, msg webrtc.DataChannelMessage) {
-	if !msg.IsString {
-		return
-	}
+func (m *Manager) handleControl(s *Session, data []byte) {
 	var c struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
 		More bool   `json:"more"`
 		ID   int    `json:"id"`
 	}
-	if json.Unmarshal(msg.Data, &c) != nil || c.Type != "clipboard" {
+	if json.Unmarshal(data, &c) != nil {
+		return
+	}
+	if c.Type == "keyframe" {
+		moonlight.RequestIDR()
+		return
+	}
+	if c.Type != "clipboard" {
 		return
 	}
 	// pion delivers one channel's messages in order on one goroutine, so the

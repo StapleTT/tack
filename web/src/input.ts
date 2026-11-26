@@ -29,6 +29,8 @@ export interface InputUI {
   sendControl(msg: object): void;
 }
 
+export interface InputChannel { readonly readyState: string; send(b: Uint8Array<ArrayBuffer>): void }
+
 const CLIP_MAX = 1 << 20; // bytes, same cap as bridge and agent
 const CLIP_CHUNK = 8192; // UTF-16 units per control message (fits pion's 64 KiB limit)
 
@@ -52,7 +54,8 @@ export class Input {
   private pasteId = 0;
   private pastes = new Map<number, PendingPaste>();
 
-  constructor(private dc: RTCDataChannel, private video: HTMLVideoElement, private ui: InputUI) {
+  // dc is the "input" data channel or the WebSocket transport (same messages).
+  constructor(private dc: InputChannel, private video: HTMLVideoElement, private ui: InputUI) {
     const moveEvent = "onpointerrawupdate" in window ? "pointerrawupdate" : "pointermove";
     this.on(video, moveEvent, (e) => this.onMove(e as PointerEvent));
     this.on(video, "mousedown", (e) => this.onButton(e as MouseEvent, true));

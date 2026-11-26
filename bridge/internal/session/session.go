@@ -65,12 +65,12 @@ type Manager struct {
 }
 
 type Session struct {
-	id int
-	pc *webrtc.PeerConnection
+	id     int
+	closeT func() // closes the transport (peer connection or WebSocket)
 
-	mu      sync.Mutex
-	control *webrtc.DataChannel
-	ended   bool
+	mu       sync.Mutex
+	sendText func(string) // control message to the browser; nil until the channel exists
+	ended    bool
 
 	clip       strings.Builder // browser clipboard chunks being reassembled
 	clipTooBig bool
@@ -163,14 +163,10 @@ func (m *Manager) canResume(client string, now time.Time) bool {
 	return client != "" && m.owner == client && ((m.cur != nil && m.resumeUntil.IsZero()) || now.Before(m.resumeUntil))
 }
 
-// Start takes over from any current session, launches Moonlight and returns
-// the SDP answer once the host stream is up.
-func (m *Manager) Start(ctx context.Context, req Request) (string, error) {
-	if !strings.Contains(strings.ToUpper(req.SDP), "H264/90000") {
-		return "", errors.New("this browser cannot decode H.264 over WebRTC")
-	}
+// normalize checks the browser's stream settings and fills in defaults.
+func (req *Request) normalize() error {
 	if req.Width <= 0 || req.Height <= 0 || req.Width > 7680 || req.Height > 4320 {
-		return "", fmt.Errorf("bad resolution %dx%d", req.Width, req.Height)
+		return fmt.Errorf("bad resolution %dx%d", req.Width, req.Height)
 	}
 	req.Width, req.Height = req.Width&^1, req.Height&^1 // encoders want even sizes
 	if req.FPS <= 0 || req.FPS > 240 {
@@ -182,22 +178,57 @@ func (m *Manager) Start(ctx context.Context, req Request) (string, error) {
 			req.BitrateKbps = 12000
 		}
 	}
+	return nil
+}
 
-	m.mu.Lock()
-	defer m.mu.Unlock()
+// takeOverLocked applies the resume rule, ends the current session and
+// returns a new one. m.mu must be held.
+func (m *Manager) takeOverLocked(req Request) (*Session, error) {
 	if req.ResumeOnly && !m.canResume(req.ClientID, time.Now()) {
-		return "", ErrResumeExpired
+		return nil, ErrResumeExpired
 	}
 	if m.cur != nil {
 		m.endLocked(m.cur, reasonKicked)
 	}
+	m.lastID++
+	return &Session{id: m.lastID}, nil
+}
 
+// launchLocked starts Moonlight with the transport's media handlers and
+// makes s the current session. m.mu must be held.
+func (m *Manager) launchLocked(ctx context.Context, req Request, s *Session, h moonlight.Handlers) error {
+	if err := m.startMoonlight(ctx, req, s, h); err != nil {
+		return err
+	}
+	m.cur = s
+	m.owner = req.ClientID
+	m.resumeUntil = time.Time{}
+	m.live.Store(s)
+	m.syncCursor() // the browser draws its own cursor, so hide the host's
+	return nil
+}
+
+// Start takes over from any current session, launches Moonlight and returns
+// the SDP answer once the host stream is up.
+func (m *Manager) Start(ctx context.Context, req Request) (string, error) {
+	if !strings.Contains(strings.ToUpper(req.SDP), "H264/90000") {
+		return "", errors.New("this browser cannot decode H.264 over WebRTC")
+	}
+	if err := req.normalize(); err != nil {
+		return "", err
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, err := m.takeOverLocked(req)
+	if err != nil {
+		return "", err
+	}
 	pc, err := m.api.NewPeerConnection(webrtc.Configuration{})
 	if err != nil {
 		return "", err
 	}
-	m.lastID++
-	s := &Session{id: m.lastID, pc: pc}
+	s.closeT = func() { pc.Close() }
 	fail := func(err error) (string, error) {
 		pc.Close()
 		return "", err
@@ -207,16 +238,24 @@ func (m *Manager) Start(ctx context.Context, req Request) (string, error) {
 		switch dc.Label() {
 		case "control":
 			s.mu.Lock()
-			s.control = dc
+			s.sendText = func(t string) { _ = dc.SendText(t) }
 			s.mu.Unlock()
 			dc.OnOpen(func() {
 				for _, msg := range m.agentState() {
 					s.sendControl(msg)
 				}
 			})
-			dc.OnMessage(func(msg webrtc.DataChannelMessage) { m.handleControl(s, msg) })
+			dc.OnMessage(func(msg webrtc.DataChannelMessage) {
+				if msg.IsString {
+					m.handleControl(s, msg.Data)
+				}
+			})
 		case "input":
-			dc.OnMessage(func(msg webrtc.DataChannelMessage) { m.handleInput(s, msg) })
+			dc.OnMessage(func(msg webrtc.DataChannelMessage) {
+				if !msg.IsString {
+					m.handleInput(s, msg.Data)
+				}
+			})
 		}
 	})
 	pc.OnConnectionStateChange(func(st webrtc.PeerConnectionState) {
@@ -275,18 +314,37 @@ func (m *Manager) Start(ctx context.Context, req Request) (string, error) {
 		return fail(ctx.Err())
 	}
 
-	if err := m.startMoonlight(ctx, req, s, video, audio); err != nil {
+	// Runs on the receive thread: packetize and send immediately. The RTP
+	// timestamp advances by the host's real frame spacing.
+	frameDur := time.Second / time.Duration(req.FPS)
+	var lastPTS time.Duration
+	audioDur := 5 * time.Millisecond
+	h := moonlight.Handlers{
+		AudioSetup: func(rate, ch, spf int) {
+			audioDur = time.Duration(spf) * time.Second / time.Duration(rate)
+		},
+		Video: func(f moonlight.Frame) bool {
+			d := frameDur
+			if lastPTS != 0 && f.PTS > lastPTS {
+				d = f.PTS - lastPTS
+			}
+			lastPTS = f.PTS
+			_ = video.WriteSample(media.Sample{Data: f.Data, Duration: d})
+			return true
+		},
+		Audio: func(p []byte) {
+			_ = audio.WriteSample(media.Sample{Data: p, Duration: audioDur})
+		},
+	}
+	if err := m.launchLocked(ctx, req, s, h); err != nil {
 		return fail(err)
 	}
-	m.cur = s
-	m.owner = req.ClientID
-	m.resumeUntil = time.Time{}
-	m.live.Store(s)
-	m.syncCursor() // the browser draws its own cursor, so hide the host's
 	return pc.LocalDescription().SDP, nil
 }
 
-func (m *Manager) startMoonlight(ctx context.Context, req Request, s *Session, video, audio *webrtc.TrackLocalStaticSample) error {
+// startMoonlight launches the host app and connects Moonlight. h carries the
+// transport's media handlers (Video, Audio, AudioSetup); the rest is filled in here.
+func (m *Manager) startMoonlight(ctx context.Context, req Request, s *Session, h moonlight.Handlers) error {
 	si, err := m.host.ServerInfo(ctx)
 	if err != nil {
 		return fmt.Errorf("host: %w", err)
@@ -322,9 +380,17 @@ func (m *Manager) startMoonlight(ctx context.Context, req Request, s *Session, v
 		return fmt.Errorf("host: %w", err)
 	}
 
-	frameDur := time.Second / time.Duration(req.FPS)
-	var lastPTS time.Duration
-	audioDur := 5 * time.Millisecond
+	h.VideoSetup = func(format, width, height, fps int) {
+		log.Printf("session %d: video 0x%x %dx%d@%d, %d kbps", s.id, format, width, height, fps, req.BitrateKbps)
+	}
+	h.Rumble = func(pad, low, high uint16) {
+		s.sendControl(map[string]any{"type": "rumble", "pad": pad, "low": low, "high": high})
+	}
+	h.Terminated = func(code int) {
+		log.Printf("session %d: host ended stream (%d)", s.id, code)
+		go m.end(s, reasonHostEnded)
+	}
+	h.Log = func(msg string) { log.Print("moonlight: ", strings.TrimRight(msg, "\n")) }
 
 	start := time.Now()
 	err = moonlight.Start(moonlight.ServerInfo{
@@ -339,36 +405,7 @@ func (m *Manager) startMoonlight(ctx context.Context, req Request, s *Session, v
 		VideoFormats: moonlight.FormatH264,
 		RIKey:        lp.RIKey,
 		RIKeyID:      lp.RIKeyID,
-	}, moonlight.Handlers{
-		VideoSetup: func(format, w, h, fps int) {
-			log.Printf("session %d: video 0x%x %dx%d@%d, %d kbps", s.id, format, w, h, fps, req.BitrateKbps)
-		},
-		AudioSetup: func(rate, ch, spf int) {
-			audioDur = time.Duration(spf) * time.Second / time.Duration(rate)
-		},
-		// Runs on the receive thread: packetize and send immediately. The
-		// RTP timestamp advances by the host's real frame spacing.
-		Video: func(f moonlight.Frame) bool {
-			d := frameDur
-			if lastPTS != 0 && f.PTS > lastPTS {
-				d = f.PTS - lastPTS
-			}
-			lastPTS = f.PTS
-			_ = video.WriteSample(media.Sample{Data: f.Data, Duration: d})
-			return true
-		},
-		Audio: func(p []byte) {
-			_ = audio.WriteSample(media.Sample{Data: p, Duration: audioDur})
-		},
-		Rumble: func(pad, low, high uint16) {
-			s.sendControl(map[string]any{"type": "rumble", "pad": pad, "low": low, "high": high})
-		},
-		Terminated: func(code int) {
-			log.Printf("session %d: host ended stream (%d)", s.id, code)
-			go m.end(s, reasonHostEnded)
-		},
-		Log: func(msg string) { log.Print("moonlight: ", strings.TrimRight(msg, "\n")) },
-	})
+	}, h)
 	if err != nil {
 		return err
 	}
@@ -399,11 +436,9 @@ func readRTCP(sender *webrtc.RTPSender, video bool) {
 	}
 }
 
-func (m *Manager) handleInput(s *Session, msg webrtc.DataChannelMessage) {
-	if msg.IsString {
-		return
-	}
-	e, err := parseInput(msg.Data)
+// handleInput takes one binary input message (docs/protocol.md).
+func (m *Manager) handleInput(s *Session, data []byte) {
+	e, err := parseInput(data)
 	if err != nil {
 		log.Printf("session %d: dropped input: %v", s.id, err)
 		return
@@ -430,13 +465,13 @@ func (m *Manager) handleInput(s *Session, msg webrtc.DataChannelMessage) {
 
 func (s *Session) sendControl(v any) {
 	s.mu.Lock()
-	dc := s.control
+	send := s.sendText
 	s.mu.Unlock()
-	if dc == nil {
+	if send == nil {
 		return
 	}
 	b, _ := json.Marshal(v)
-	_ = dc.SendText(string(b))
+	send(string(b))
 }
 
 // Streaming reports whether a browser currently owns the stream.
@@ -470,7 +505,7 @@ func (m *Manager) endLocked(s *Session, reason string) {
 		return
 	}
 	s.ended = true
-	dc := s.control
+	send := s.sendText
 	s.mu.Unlock()
 
 	if m.cur == s {
@@ -492,18 +527,18 @@ func (m *Manager) endLocked(s *Session, reason string) {
 		m.cur = nil
 		m.live.Store(nil)
 	}
-	if dc != nil && reason != "" {
+	if send != nil && reason != "" {
 		typ := "ended"
 		if reason == reasonKicked {
 			typ = "kicked"
 		}
 		b, _ := json.Marshal(map[string]string{"type": typ, "reason": reason})
-		_ = dc.SendText(string(b))
+		send(string(b))
 	}
 	// Give the control message a moment to leave before closing.
 	go func() {
 		time.Sleep(200 * time.Millisecond)
-		s.pc.Close()
+		s.closeT()
 	}()
 	log.Printf("session %d: ended (%s)", s.id, reason)
 }

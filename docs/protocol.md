@@ -33,6 +33,24 @@ There is no signaling WebSocket. ICE is non-trickle and the bridge has fixed hos
 
 Response `200 {"sdp": "<answer>"}`, sent once the Moonlight session is up. Errors return a non-200 status with a plain-text reason (host offline, not paired, no H.264).
 
+## Browser to bridge: WebSocket transport (`GET /api/stream`)
+
+The same session over one WebSocket on the page's origin, for browsers that can't reach UDP (reverse proxy). The page tries WebRTC first. If WebRTC is unavailable, fails before connecting, or doesn't connect within 4 s of the answer, it switches to this transport and remembers that per origin (`localStorage["tack.transport"]`). `?transport=ws|webrtc` forces one.
+
+The handshake needs the session cookie and an `Origin` whose host matches `Host`.
+
+- Browser to bridge:
+  - The first text message is the session request JSON (above) with `sdp` empty.
+  - Later text messages are control messages, as on the `control` channel, plus `{"type":"keyframe"}`, which triggers `LiRequestIdrFrame`.
+  - Binary messages are input, exactly as on the `input` channel.
+- Bridge to browser:
+  - Text: `{"type":"started"}` once Moonlight is up, or `{"type":"error","status":409|502,"text":"…"}` and close. After that, the `control` channel's messages.
+  - Binary `0x01 flags:u8 pts_us:u64be <Annex B frame>` carries video. Flags bit 0 means IDR.
+  - Binary `0x02 <Opus packet>` carries 5 ms of stereo audio.
+- The bridge queues at most 16 media messages. A full queue drops the video frame, and Moonlight then skips to the next IDR, so the browser never decodes past a gap. Dropped audio is just lost.
+- The browser decodes with WebCodecs and draws video onto a canvas whose `captureStream()` feeds the page's `<video>`. If the decoder falls more than 2 frames behind or errors, it drops frames until the next keyframe and requests one.
+- A socket that closes after `started` counts as a dropped connection: the page resumes within the 30 s window.
+
 ## Media
 
 - Video: H.264 track, stream ID `tack`. Each Moonlight frame becomes one sample. The RTP timestamp advances by the host's real frame spacing.

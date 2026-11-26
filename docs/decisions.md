@@ -41,4 +41,4 @@
 4. **Firefox rumble and clipboard** are browser-limited. Test early.
 5. **Controller count** assumed 1 to 2.
 7. **H.264 profile negotiation.** Sunshine sends High profile. The bridge offers High (`64001f`) and also accepts constrained baseline (`42e01f`), counting on the browser's decoder to handle High anyway. Headless Firefox on Linux does. Chrome on ChromeOS/Windows and Firefox on Windows are untested.
-6. **Reverse proxy scope**: carries page and signaling only. Media is UDP and bypasses it.
+6. **Reverse proxy scope**: carries everything when needed. WebRTC (UDP) stays first choice. Browsers that can't reach UDP fall back to one WebSocket with WebCodecs decoding (`/api/stream`), at the cost of TCP head-of-line blocking.

@@ -19,7 +19,41 @@ Use a Raspberry Pi 5 with **Raspberry Pi OS Lite (64-bit), Debian Trixie**, Ethe
 
 No router port forwarding is needed for this LAN setup.
 
-Behind a reverse proxy for browsers outside the LAN: the proxy carries only TCP 8443 (pages, session setup, and the agent WebSocket). Media stays on UDP and goes around the proxy. Forward UDP 8189 on the router to the Pi and start the bridge with `serve -public-ip <router's public IPv4>`. For Compose, set `command: ["serve", "-public-ip", "<ip>"]` on the bridge service. Without the forward and the flag, the stream stays on “Connecting…”. Run the agent against the Pi’s LAN address, not through the proxy, because the agent trusts only the bridge’s own CA.
+### Internet access through a reverse proxy
+
+Only the proxy needs to be reachable. When WebRTC can't reach the bridge, the stream page switches to a WebSocket transport on the same HTTPS origin. Video, audio, input and control then all run through the proxy. The browser decodes the stream itself with WebCodecs, which needs a current Chrome or Firefox. The page remembers the choice per site address. Add `?transport=webrtc` or `?transport=ws` to `/stream` to force one.
+
+NGINX example. Copy the bridge's public `tls/ca.pem` to the proxy and replace `BRIDGE-IP` with the bridge's LAN address:
+
+```nginx
+map $http_upgrade $connection_upgrade { default upgrade; '' close; }
+
+server {
+    listen 443 ssl;
+    server_name tack.example.com;
+    # ssl_certificate / ssl_certificate_key: your public certificate
+
+    location / {
+        proxy_pass https://BRIDGE-IP:8443;
+        proxy_ssl_trusted_certificate /etc/nginx/tack-ca.pem;
+        proxy_ssl_verify on;
+        proxy_ssl_name BRIDGE-IP;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;                    # the bridge checks Origin against it
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_buffering off;
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+    }
+}
+```
+
+The WebSocket transport runs over TCP. A lost packet delays everything behind it until it is resent, so expect more latency than LAN WebRTC on a lossy connection. The bridge drops frames instead of queueing them, so the delay stays bounded. For lower latency, you can also forward UDP 8189 to the bridge and start it with `serve -public-ip <public IPv4>` (Compose: `command: ["serve", "-public-ip", "<ip>"]`). WebRTC then works from outside too.
+
+Before exposing the panel, note that sign-in is one password with no rate limit or second factor yet. Use a long admin password.
+
+The agent normally connects to the bridge's LAN address. It also accepts publicly trusted certificates, so `-bridge https://tack.example.com` through the proxy works as well.
 
 On the **Pi**, check the OS and clone the repository, including the nested Moonlight dependencies:
 
@@ -144,6 +178,7 @@ For a backup or migration, stop the bridge and copy the **whole state directory*
 | Service restarts immediately | Read its logs. A missing admin password means initialization used a different state directory or was skipped. Under Docker, compare `ls -ldn data` with the UID/GID in `.env`. |
 | “Address already in use” | Inspect `sudo ss -ltnup` for TCP 8443 and UDP 8189. Check for another bridge before starting either installation. |
 | Certificate warning after import | Use the Pi’s LAN IPv4 address. After changing the Pi’s address, restart the bridge to reissue its server certificate. Verify the CA came from this bridge’s state directory. |
+| Stream stays on “Connecting…” from outside the LAN | WebRTC can't reach UDP 8189. The page switches to the WebSocket transport after 4 s. If that fails too, check the proxy passes `Upgrade`, `Connection` and `Host`. |
 | Panel works but the stream fails | Verify the panel shows the gaming PC online and paired, Sunshine is capturing the desktop, and UDP 8189 can reach the Pi from the laptop. Check that Docker uses host networking. |
 | Clipboard, host cursors or automatic game mode are missing | Check the agent log on the gaming PC, its bridge IP, token and CA, and whether the user service can access the running Hyprland session. The token and CA must come from the bridge being used. After moving the bridge to another machine, copy them again. |
 

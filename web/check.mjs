@@ -97,6 +97,14 @@ const report = await evaluate(`(async () => {
   out.mouseMode = document.getElementById("mode")?.textContent;
   out.videoCursor = document.getElementById("video")?.style.cursor.replace(/base64,[^)]*/g, "base64,…");
   out.armedBanner = document.getElementById("banner") ? !document.getElementById("banner").hidden : undefined;
+  const v = document.getElementById("video");
+  const w = window.__tack?.ws;
+  if (w) {
+    out.transport = "websocket";
+    out.ws = { framesDecoded: w.framesDecoded, framesDropped: w.framesDropped, decodeQueue: w.decodeQueue, audio: w.audio.state };
+    out.videoElement = { width: v.videoWidth, height: v.videoHeight, paused: v.paused, currentTime: v.currentTime };
+    return JSON.stringify(out);
+  }
   if (!window.__tack?.pc) return JSON.stringify(out);
   (await window.__tack.pc.getStats()).forEach((s) => {
     if (s.type === "inbound-rtp") out[s.kind] = {
@@ -106,7 +114,6 @@ const report = await evaluate(`(async () => {
       framesDropped: s.framesDropped, totalSamplesReceived: s.totalSamplesReceived,
     };
   });
-  const v = document.getElementById("video");
   out.videoElement = { width: v.videoWidth, height: v.videoHeight, paused: v.paused, currentTime: v.currentTime };
   return JSON.stringify(out);
 })()`);

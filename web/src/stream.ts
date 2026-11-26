@@ -4,6 +4,7 @@
 import { Input, MouseMode } from "./input.js";
 import { VK } from "./keymap.js";
 import { HostCursor } from "./hostcursor.js";
+import { WsStream } from "./wsstream.js";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const video = $<HTMLVideoElement>("video");
@@ -28,7 +29,17 @@ for (const button of menu.querySelectorAll<HTMLButtonElement>("button[data-act]"
 }
 const [resW, resH] = (params.get("res") ?? "").split("x").map(Number);
 
+// Transport: WebRTC (UDP, lowest latency) unless it can't connect, e.g.
+// through a reverse proxy; then the WebSocket transport, remembered per origin.
+// ?transport=ws or ?transport=webrtc forces one and saves the choice.
+const forced = params.get("transport");
+if (forced === "ws") localStorage.setItem("tack.transport", "ws");
+if (forced === "webrtc") localStorage.removeItem("tack.transport");
+const useWs = () => localStorage.getItem("tack.transport") === "ws" || typeof RTCPeerConnection === "undefined";
+const PROBE_MS = 4000; // WebRTC gets this long to connect before falling back
+
 let pc: RTCPeerConnection | null = null;
+let ws: WsStream | null = null;
 let input: Input | null = null;
 let control: RTCDataChannel | null = null;
 // Handles for web/check.mjs.
@@ -68,6 +79,8 @@ function stop() {
   input = null;
   pc?.close();
   pc = null;
+  ws?.close();
+  ws = null;
   menu.hidden = true;
   statsEl.hidden = true;
   hint.hidden = toast.hidden = true;
@@ -85,6 +98,7 @@ function play() {
   });
 }
 function unmute() {
+  if (ws) { void ws.audio.resume(); return; }
   if (!video.muted) return;
   video.muted = false;
   soundBtn.hidden = true;
@@ -101,7 +115,10 @@ const ui = {
   hostPointer: (x: number, y: number) => hostCursor.moved(x, y),
   menuOpen: () => !menu.hidden,
   hotkey: (key: "menu" | "fullscreen" | "stats" | "mode") => act(key),
-  sendControl: (msg: object) => { if (control?.readyState === "open") control.send(JSON.stringify(msg)); },
+  sendControl: (msg: object) => {
+    if (ws) ws.sendText(msg);
+    else if (control?.readyState === "open") control.send(JSON.stringify(msg));
+  },
 };
 
 function showMode(mode: MouseMode) {
@@ -192,11 +209,79 @@ function waitForIce(conn: RTCPeerConnection, ms: number): Promise<void> {
   });
 }
 
+// Control messages from the bridge, the same on both transports.
+function onControl(msg: any) {
+  if (msg.type === "kicked") { stop(); show("Taken over by another device", "Take it back", "Another device started a stream, so this one ended. Taking it back relaunches the session at this device's resolution."); }
+  else if (msg.type === "ended") { stop(); show("Session ended", "Reconnect", `The stream ended: ${msg.reason}.`); }
+  else if (msg.type === "mode") input?.setMode(msg.mode);
+  else if (msg.type === "rumble") input?.playRumble(msg.pad, msg.low, msg.high);
+  else if (msg.type === "cursors") void hostCursor.load(msg.cursors, msg.size);
+  else if (msg.type === "cursor") hostCursor.show(msg.state, msg.px, msg.screen_w);
+  else if (msg.type === "clipboard" || msg.type === "clipboard-ack") input?.onControl(msg);
+}
+
+function sessionRequest(resumeOnly: boolean, sdp = "") {
+  const dpr = window.devicePixelRatio || 1;
+  return {
+    client_id: clientID, resume_only: resumeOnly, sdp,
+    width: resW || Math.round(screen.width * dpr),
+    height: resH || Math.round(screen.height * dpr),
+    fps: Number(params.get("fps")) || 60,
+    bitrate_kbps: Number(params.get("bitrate")) || 0,
+  };
+}
+
+function connected() {
+  reconnectDeadline = 0;
+  overlay.hidden = true;
+  if (menu.hidden) flash(hint, 5000);
+}
+
+// connectWs resolves once the host stream is up (or the bridge refused it)
+// and rejects if the socket drops first.
+function connectWs(resumeOnly: boolean): Promise<void> {
+  const w = new WsStream(sessionRequest(resumeOnly));
+  ws = w;
+  debug.ws = w;
+  video.srcObject = w.stream;
+  video.muted = true; // audio plays through the WebSocket transport's AudioContext
+  void video.play().catch(() => {});
+  const syncSound = () => { if (w === ws) soundBtn.hidden = w.audio.state === "running"; };
+  w.audio.onstatechange = syncSound;
+  void w.audio.resume();
+  syncSound();
+  w.onControl = (msg) => { if (w === ws) onControl(msg); };
+  return new Promise((resolve, reject) => {
+    w.onStarted = () => {
+      if (w !== ws) return;
+      debug.input = input = new Input(w, video, ui);
+      lastFrames = 0;
+      statsTimer = setInterval(() => updateWsStats(w), 1000);
+      connected();
+      resolve();
+    };
+    w.onError = (_status, text) => {
+      if (w !== ws) return resolve();
+      stop();
+      show("Could not start", "Retry", text);
+      resolve();
+    };
+    w.onClose = (started) => {
+      if (w !== ws) return;
+      if (!started) return reject(new Error("the bridge closed the stream connection"));
+      // Same window as a dropped WebRTC connection: the bridge holds the session for 30 s.
+      reconnectDeadline = Date.now() + 30_000;
+      start(true);
+    };
+  });
+}
+
 async function connect(resumeOnly = false) {
   stop();
   connectBtn.disabled = true;
   message.textContent = "Connecting…";
   detail.textContent = "";
+  if (useWs()) return connectWs(resumeOnly);
 
   const conn = new RTCPeerConnection();
   pc = conn;
@@ -218,18 +303,16 @@ async function connect(resumeOnly = false) {
     if (e.track.kind === "audio") play();
   };
 
-  ctl.onmessage = (e) => {
-    if (conn !== pc) return;
-    const msg = JSON.parse(e.data);
-    if (msg.type === "kicked") { stop(); show("Taken over by another device", "Take it back", "Another device started a stream, so this one ended. Taking it back relaunches the session at this device's resolution."); }
-    else if (msg.type === "ended") { stop(); show("Session ended", "Reconnect", `The stream ended: ${msg.reason}.`); }
-    else if (msg.type === "mode") input?.setMode(msg.mode);
-    else if (msg.type === "rumble") input?.playRumble(msg.pad, msg.low, msg.high);
-    else if (msg.type === "cursors") void hostCursor.load(msg.cursors, msg.size);
-    else if (msg.type === "cursor") hostCursor.show(msg.state, msg.px, msg.screen_w);
-    else if (msg.type === "clipboard" || msg.type === "clipboard-ack") input?.onControl(msg);
-  };
+  ctl.onmessage = (e) => { if (conn === pc) onControl(JSON.parse(e.data)); };
 
+  // A fresh session that never connects means UDP can't reach the bridge
+  // (typically a reverse proxy). A reconnect that fails is just the network.
+  let wasConnected = false;
+  const fallBack = () => {
+    console.info("tack: WebRTC did not connect, switching to the WebSocket transport");
+    localStorage.setItem("tack.transport", "ws");
+    start();
+  };
   conn.onconnectionstatechange = () => {
     if (conn !== pc) return;
     clearTimeout(reconnectTimer);
@@ -237,13 +320,10 @@ async function connect(resumeOnly = false) {
       reconnectDeadline = Date.now() + 30_000;
       reconnectTimer = window.setTimeout(() => start(true), 6000);
     }
-    if (conn.connectionState === "connected") {
-      reconnectDeadline = 0;
-      overlay.hidden = true;
-      if (menu.hidden) flash(hint, 5000);
-    }
+    if (conn.connectionState === "connected") { wasConnected = true; connected(); }
     if (conn.connectionState === "failed") {
-      if (Date.now() < reconnectDeadline) start(true);
+      if (!wasConnected && !resumeOnly) fallBack();
+      else if (Date.now() < reconnectDeadline) start(true);
       else { stop(); show("Connection lost", "Reconnect", "The bridge no longer holds the session. Reconnecting starts a new one."); }
     }
   };
@@ -252,18 +332,10 @@ async function connect(resumeOnly = false) {
   await conn.setLocalDescription({ type: "offer", sdp: preferStereo(offer.sdp ?? "") });
   await waitForIce(conn, 500);
 
-  const dpr = window.devicePixelRatio || 1;
   const res = await fetch("/api/session", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      client_id: clientID, resume_only: resumeOnly,
-      sdp: conn.localDescription?.sdp,
-      width: resW || Math.round(screen.width * dpr),
-      height: resH || Math.round(screen.height * dpr),
-      fps: Number(params.get("fps")) || 60,
-      bitrate_kbps: Number(params.get("bitrate")) || 0,
-    }),
+    body: JSON.stringify(sessionRequest(resumeOnly, conn.localDescription?.sdp)),
   });
   if (!res.ok) {
     stop();
@@ -274,6 +346,8 @@ async function connect(resumeOnly = false) {
   await conn.setRemoteDescription({ type: "answer", sdp });
   lastFrames = lastDecodeTime = 0;
   statsTimer = setInterval(() => updateStats(conn), 1000);
+  // On a LAN ICE connects in well under a second; don't wait for "failed".
+  setTimeout(() => { if (conn === pc && !wasConnected && !resumeOnly) fallBack(); }, PROBE_MS);
 }
 
 // Receiver counters start over for each peer connection.
@@ -295,6 +369,10 @@ async function updateStats(conn: RTCPeerConnection) {
       rows.unshift(["RTT", `${(s.currentRoundTripTime * 1000).toFixed(1)} ms`]);
     }
   });
+  renderStats(rows, sub);
+}
+
+function renderStats(rows: [string, string][], sub: string) {
   const span = (text: string, tag = "span") => Object.assign(document.createElement(tag), { textContent: text });
   statsEl.replaceChildren(...rows.flatMap(([k, v]) => [span(k), span(v)]));
   $("grid").replaceChildren(...rows.map(([k, v]) => { const d = span("", "div"); d.append(span(k), span(v, "b")); return d; }));
@@ -302,10 +380,25 @@ async function updateStats(conn: RTCPeerConnection) {
   statsEl.hidden = !showStats;
 }
 
+function updateWsStats(w: WsStream) {
+  const n = w.framesDecoded - lastFrames;
+  lastFrames = w.framesDecoded;
+  const v = video;
+  renderStats([["Transport", "WebSocket"], ["Frame rate", `${n} fps`], ["Decode queue", String(w.decodeQueue)], ["Dropped", String(w.framesDropped)]],
+    v.videoWidth ? `${v.videoWidth}×${v.videoHeight} · ${n} fps` : "");
+}
+
 function start(resumeOnly = false) {
   if (!resumeOnly) reconnectDeadline = 0;
   connect(resumeOnly).catch((err) => {
     stop();
+    // A WebRTC API error means this browser won't do WebRTC here (disabled,
+    // blocked by policy or an extension): use the WebSocket transport.
+    if (!useWs() && err instanceof DOMException) {
+      console.info("tack: WebRTC unavailable, switching to the WebSocket transport:", err);
+      localStorage.setItem("tack.transport", "ws");
+      return start(resumeOnly);
+    }
     if (resumeOnly && Date.now() + 1500 < reconnectDeadline) {
       show("Connection lost", "", `Reconnecting. The session is held for ${Math.round((reconnectDeadline - Date.now()) / 1000)} s.`);
       connectBtn.hidden = true;

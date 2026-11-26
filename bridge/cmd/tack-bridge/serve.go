@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"net/netip"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -156,6 +157,45 @@ func serve(ctx context.Context, dataDir, listen string, udpPort int, app, public
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"sdp": answer})
 	})
+	// The same session over one WebSocket, for browsers that only reach the
+	// bridge through an HTTP reverse proxy (docs/protocol.md).
+	mux.Handle("GET /api/stream", websocket.Server{
+		Handshake: sameOrigin,
+		Handler: func(ws *websocket.Conn) {
+			fail := func(code int, msg string) {
+				websocket.JSON.Send(ws, map[string]any{"type": "error", "status": code, "text": msg})
+			}
+			ws.MaxPayloadBytes = 64 << 10
+			var req session.Request
+			if err := websocket.JSON.Receive(ws, &req); err != nil {
+				fail(http.StatusBadRequest, "bad request")
+				return
+			}
+			sctx, cancel := context.WithTimeout(ws.Request().Context(), 30*time.Second)
+			defer cancel()
+			if !hostMu.TryRLock() {
+				fail(409, "Pairing in progress")
+				return
+			}
+			if savedHost.Host == "" {
+				hostMu.RUnlock()
+				fail(409, "Pair a host first")
+				return
+			}
+			ended, err := mgr.StartWS(sctx, req, ws)
+			hostMu.RUnlock()
+			if err != nil {
+				log.Printf("session start: %v", err)
+				code := http.StatusBadGateway
+				if errors.Is(err, session.ErrResumeExpired) {
+					code = http.StatusConflict
+				}
+				fail(code, err.Error())
+				return
+			}
+			<-ended
+		},
+	})
 
 	srv := &http.Server{
 		Addr:              listen,
@@ -262,4 +302,16 @@ func loadOrCreateToken(path string) (string, error) {
 	}
 	tok := hex.EncodeToString(raw)
 	return tok, os.WriteFile(path, []byte(tok+"\n"), 0o600)
+}
+
+// sameOrigin rejects WebSocket handshakes from other sites. The session
+// cookie rides along on cross-site WebSocket requests, and CrossOriginProtection
+// only covers unsafe methods. Behind a reverse proxy, the proxy must pass the
+// browser's Host header through.
+func sameOrigin(_ *websocket.Config, r *http.Request) error {
+	u, err := url.Parse(r.Header.Get("Origin"))
+	if err != nil || u.Host == "" || !strings.EqualFold(u.Host, r.Host) {
+		return errors.New("cross-origin WebSocket refused")
+	}
+	return nil
 }
