@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/netip"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -89,13 +90,27 @@ const (
 )
 
 // NewManager prepares WebRTC with all media on one UDP port, so a single
-// firewall or port-forward rule covers it.
-func NewManager(host *nvhttp.Client, app string, udpPort int, dataDir string) (*Manager, error) {
+// firewall or port-forward rule covers it. A non-empty publicIP is offered
+// alongside the LAN addresses, on the same port, for browsers outside the LAN.
+func NewManager(host *nvhttp.Client, app string, udpPort int, publicIP, dataDir string) (*Manager, error) {
+	se := webrtc.SettingEngine{}
+	if publicIP != "" {
+		ip, err := netip.ParseAddr(publicIP)
+		if err != nil || !ip.Is4() {
+			return nil, fmt.Errorf("public IP %q: want an IPv4 address", publicIP)
+		}
+		if err := se.SetICEAddressRewriteRules(webrtc.ICEAddressRewriteRule{
+			External:        []string{ip.String()},
+			AsCandidateType: webrtc.ICECandidateTypeHost,
+			Mode:            webrtc.ICEAddressRewriteAppend,
+		}); err != nil {
+			return nil, err
+		}
+	}
 	mux, err := ice.NewMultiUDPMuxFromPort(udpPort)
 	if err != nil {
 		return nil, fmt.Errorf("udp port %d: %w", udpPort, err)
 	}
-	se := webrtc.SettingEngine{}
 	se.SetICEUDPMux(mux)
 	se.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4})
 

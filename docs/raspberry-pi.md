@@ -19,6 +19,8 @@ Use a Raspberry Pi 5 with **Raspberry Pi OS Lite (64-bit), Debian Trixie**, Ethe
 
 No router port forwarding is needed for this LAN setup.
 
+Behind a reverse proxy for browsers outside the LAN: the proxy carries only TCP 8443 (pages, session setup, and the agent WebSocket). Media stays on UDP and goes around the proxy. Forward UDP 8189 on the router to the Pi and start the bridge with `serve -public-ip <router's public IPv4>`. For Compose, set `command: ["serve", "-public-ip", "<ip>"]` on the bridge service. Without the forward and the flag, the stream stays on “Connecting…”. Run the agent against the Pi’s LAN address, not through the proxy, because the agent trusts only the bridge’s own CA.
+
 On the **Pi**, check the OS and clone the repository, including the nested Moonlight dependencies:
 
 ```sh
@@ -143,6 +145,6 @@ For a backup or migration, stop the bridge and copy the **whole state directory*
 | “Address already in use” | Inspect `sudo ss -ltnup` for TCP 8443 and UDP 8189. Check for another bridge before starting either installation. |
 | Certificate warning after import | Use the Pi’s LAN IPv4 address. After changing the Pi’s address, restart the bridge to reissue its server certificate. Verify the CA came from this bridge’s state directory. |
 | Panel works but the stream fails | Verify the panel shows the gaming PC online and paired, Sunshine is capturing the desktop, and UDP 8189 can reach the Pi from the laptop. Check that Docker uses host networking. |
-| Clipboard or automatic game mode is missing | Check the agent log on the gaming PC, its bridge IP, token and CA, and whether the user service can access the running Hyprland session. |
+| Clipboard, host cursors or automatic game mode are missing | Check the agent log on the gaming PC, its bridge IP, token and CA, and whether the user service can access the running Hyprland session. The token and CA must come from the bridge being used. After moving the bridge to another machine, copy them again. |
 
 The project roadmap still lists physical Pi and laptop validation as outstanding. A successful login checks HTTPS; playing video with sound and input checks the media path.

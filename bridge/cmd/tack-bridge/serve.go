@@ -27,7 +27,7 @@ import (
 	"tack/web"
 )
 
-func serve(ctx context.Context, dataDir, listen string, udpPort int, app string) error {
+func serve(ctx context.Context, dataDir, listen string, udpPort int, app, publicIP string) error {
 	host, err := loadHost(dataDir)
 	if err != nil && !errors.Is(err, errNoHost) {
 		return err
@@ -37,7 +37,7 @@ func serve(ctx context.Context, dataDir, listen string, udpPort int, app string)
 	if err != nil {
 		return err
 	}
-	mgr, err := session.NewManager(host, app, udpPort, dataDir)
+	mgr, err := session.NewManager(host, app, udpPort, publicIP, dataDir)
 	if err != nil {
 		return err
 	}

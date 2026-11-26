@@ -64,8 +64,9 @@ func main() {
 		listen := fs.String("listen", ":8443", "HTTPS listen address")
 		udpPort := fs.Int("udp-port", 8189, "UDP port for all WebRTC media")
 		app := fs.String("app", "Desktop", "host app to launch when none is running")
+		publicIP := fs.String("public-ip", "", "public IPv4 to also advertise for media, for browsers outside the LAN (forward the UDP port to this machine)")
 		fs.Parse(args)
-		err = serve(ctx, *dataDir, *listen, *udpPort, *app)
+		err = serve(ctx, *dataDir, *listen, *udpPort, *app, *publicIP)
 	case "apps":
 		fs.Parse(args)
 		err = apps(ctx, *dataDir)
